@@ -78,11 +78,11 @@ jobs:
           echo "PKG_CONFIG_PATH=/usr/local/lib/pkgconfig:$PKG_CONFIG_PATH" >> $GITHUB_ENV
 
       - name: Cache .cabal
+        id: cachecabal
         uses: actions/cache@v3
         with:
-          path: |
-            ~/.cabal
-          key: ${{ hashFiles('cabal.project') }}-${{ hashFiles('**/*.cabal') }}
+          path: ~/.cabal
+          key: cabal-${{ hashFiles('cabal.project') }}-${{ hashFiles('**/*.cabal') }}
 
       - uses: haskell/actions/setup@v1
         with:
@@ -116,6 +116,7 @@ jobs:
           cabal update
           cabal install -j cardano-node-8.1.1 --overwrite-policy=always
           cabal install -j cardano-cli-8.4.0.0 --overwrite-policy=always
+          cabal install -j armadillo-cli --overwrite-policy=always
           echo "/home/runner/.cabal/bin" >> $GITHUB_PATH
 
       - name: build & test
