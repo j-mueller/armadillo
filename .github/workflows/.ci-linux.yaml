@@ -14,12 +14,12 @@ jobs:
       - name: install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libsystemd-dev
+          sudo apt-get install -y libsystemd-dev librocksdb-dev
 
       # cache libsodium
       - name: cache libsodium-1.0.18
         id: libsodium
-        uses: actions/cache@v2
+        uses: actions/cache@v3
         with:
           path: ~/libsodium-stable
           key: ${{ runner.os }}-libsodium-1.0.18
@@ -44,7 +44,7 @@ jobs:
       # cache secp256K1
       - name: cache libsecp256k1
         id: libsecp256k1
-        uses: actions/cache@v2
+        uses: actions/cache@v3
         with:
           path: ~/secp256k1
           key: libsecp256k1
@@ -80,11 +80,26 @@ jobs:
           echo "PKG_CONFIG_PATH=/usr/local/lib/pkgconfig:$PKG_CONFIG_PATH" >> $GITHUB_ENV
 
       - name: Cache .cabal
-        uses: actions/cache@v2
+        uses: actions/cache@v3
         with:
           path: |
             ~/.cabal
-          key: cabal-${{ hashFiles('cabal.project', '**/*.cabal') }}
+          key: ${{ hashFiles('cabal.project') }}-${{ hashFiles('**/*.cabal') }}
+
+      - uses: haskell/actions/setup@v1
+        with:
+          ghc-version: '8.10.7'
+          cabal-version: '3.10.1.0'
+
+      # download & install cardano-dex-backend
+      - name: Install cardano-dex-backend
+        run: |
+          git clone https://github.com/j-mueller/cardano-dex-backend ~/cardano-dex-backend
+          cd ~/cardano-dex-backend
+          git checkout bc2bef59218e8f0e4c3223a3d4f764a4caa7107d
+          cabal update
+          cabal install --global --overwrite-policy=always amm-executor-app wallet-helper-app
+          cd -
 
       - uses: haskell/actions/setup@v1
         with:
