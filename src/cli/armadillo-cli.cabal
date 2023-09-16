@@ -1,91 +1,140 @@
-cabal-version:       3.0
-name:                armadillo-cli
-version:             0.1.0.0
-synopsis:            CLI
-license-file: LICENSE
-license: Apache-2.0
-author: Jann Müller <j-mueller@users.noreply.github.com>
-maintainer: Jann Müller <j-mueller@users.noreply.github.com>
-copyright: (c) 2023 Jann Müller
-build-type:          Simple
+cabal-version: 3.0
+name:          armadillo-cli
+version:       0.1.0.0
+synopsis:      CLI
+license-file:  LICENSE
+license:       Apache-2.0
+author:        Jann Müller <j-mueller@users.noreply.github.com>
+maintainer:    Jann Müller <j-mueller@users.noreply.github.com>
+copyright:     (c) 2023 Jann Müller
+build-type:    Simple
 
 common lang
-    default-language: Haskell2010
-    default-extensions: ExplicitForAll ScopedTypeVariables
-                        DeriveGeneric StandaloneDeriving DeriveLift
-                        GeneralizedNewtypeDeriving DeriveFunctor DeriveFoldable
-                        DeriveTraversable ImportQualifiedPost MultiParamTypeClasses
-                        DerivingStrategies NamedFieldPuns FlexibleContexts
-                        LambdaCase
+  default-language:   Haskell2010
+  default-extensions:
+    DeriveFoldable
+    DeriveFunctor
+    DeriveGeneric
+    DeriveLift
+    DeriveTraversable
+    DerivingStrategies
+    ExplicitForAll
+    FlexibleContexts
+    GeneralizedNewtypeDeriving
+    ImportQualifiedPost
+    LambdaCase
+    MultiParamTypeClasses
+    NamedFieldPuns
+    ScopedTypeVariables
+    StandaloneDeriving
 
-    other-extensions: DeriveAnyClass FlexibleInstances
-                      MultiParamTypeClasses TypeFamilies OverloadedStrings
-                      MonadComprehensions ConstrainedClassMethods TupleSections GADTs
-                      RankNTypes TemplateHaskell QuasiQuotes TypeApplications
-                      ExistentialQuantification
+  other-extensions:
+    ConstrainedClassMethods
+    DeriveAnyClass
+    ExistentialQuantification
+    FlexibleInstances
+    GADTs
+    MonadComprehensions
+    MultiParamTypeClasses
+    OverloadedStrings
+    QuasiQuotes
+    RankNTypes
+    TemplateHaskell
+    TupleSections
+    TypeApplications
+    TypeFamilies
 
-    ghc-options: -Wall -Wnoncanonical-monad-instances
-                 -Wincomplete-uni-patterns -Wincomplete-record-updates
-                 -Wredundant-constraints -Widentities -Wunused-packages
+  ghc-options:
+    -Wall -Wnoncanonical-monad-instances -Wincomplete-uni-patterns
+    -Wincomplete-record-updates -Wredundant-constraints -Widentities
+    -Wunused-packages
 
 library
-  import: lang
-  hs-source-dirs:
-    lib
-  ghc-options: -fobject-code -fno-ignore-interface-pragmas -fno-omit-interface-pragmas -fno-specialise
+  import:          lang
+  hs-source-dirs:  lib
+  ghc-options:
+    -fobject-code -fno-ignore-interface-pragmas
+    -fno-omit-interface-pragmas -fno-specialise
+
   exposed-modules:
     Armadillo.Api
+    Armadillo.BuildTx
     Armadillo.Cli
     Armadillo.Cli.Command
+    Armadillo.Command
+    Armadillo.Scripts
     Armadillo.Server
+
   build-depends:
-    base >= 4.16
+    , aeson
+    , aeson-pretty
+    , base                                                              >=4.16
+    , bytestring
+    , cardano-api
+    , cardano-dex-contracts-offchain
+    , containers
+    , convex-base
+    , convex-coin-selection
+    , convex-mockchain
+    , convex-node-client
+    , convex-wallet
+    , either-result
+    , http-client
+    , katip
+    , mtl
+    , openapi3
     , optparse-applicative
+    , plutus-ledger-api:{plutus-ledger-api, plutus-ledger-api-testlib}
     , servant
-    , servant-openapi3
     , servant-client
     , servant-client-core
+    , servant-openapi3
     , servant-server
-    , openapi3
     , text
-    , aeson
-    , bytestring
+    , transformers
     , warp
 
 executable armadillo-cli
-    import: lang
-    main-is:          Main.hs
-    build-depends:
-        base >=4.14.3.0,
-        armadillo-cli
-    hs-source-dirs:   app
-    default-language: Haskell2010
-    ghc-options:
-      -threaded -rtsopts -O2
+  import:           lang
+  main-is:          Main.hs
+  build-depends:
+    , armadillo-cli
+    , base           >=4.14.3.0
+
+  hs-source-dirs:   app
+  default-language: Haskell2010
+  ghc-options:      -threaded -rtsopts -O2
 
 test-suite armadillo-cli-test
-  type: exitcode-stdio-1.0
-  import: lang
+  import:           lang
+  type:             exitcode-stdio-1.0
   main-is:          Spec.hs
   other-modules:
     Armadillo.Test.CliCommand
     Armadillo.Test.Integration
+    Armadillo.Test.Utils
+
   build-depends:
-    base >=4.14.3.0,
-    armadillo-cli,
-    contra-tracer,
-    filepath,
-    process,
-    process-extras,
-    text,
-    tasty,
-    tasty-hunit,
-    convex-devnet,
-    servant-client,
-    servant-client-core,
-    http-client,
-    aeson,
+    , aeson
+    , armadillo-cli
+    , base                 >=4.14.3.0
+    , bytestring
+    , cardano-api
+    , containers
+    , contra-tracer
+    , convex-base
+    , convex-devnet
+    , convex-wallet
+    , filepath
+    , http-client
+    , lens
+    , process
+    , servant-client
+    , servant-client-core
+    , tasty
+    , tasty-hunit
+    , text
+
   hs-source-dirs:   test
   default-language: Haskell2010
-  ghc-options:
-    -threaded -rtsopts -O2
+  ghc-options:      -threaded -rtsopts -O2
