@@ -5,6 +5,43 @@ on:
     branches:
       - 'main'
 jobs:
+  style:
+    runs-on: ubuntu-latest
+    steps:
+      # install deps.
+      - name: install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y fdfind
+      - uses: actions/checkout@v2
+      - name: Cache .cabal
+        id: cachecabal
+        uses: actions/cache@v3
+        with:
+          path: ~/.cabal
+          key: cabal-style-${{ hashFiles('cabal.project') }}-${{ hashFiles('**/*.cabal') }}
+
+      - uses: haskell/actions/setup@v1
+        with:
+          ghc-version: '9.2.8'
+          cabal-version: '3.10.1.0'
+
+      - name: Build dependencies for integration test
+        run: |
+          cabal update
+          cabal install -j cabal-fmt-0.1.7 stylish-haskell-0.14.5.0 --overwrite-policy=always
+
+      - name: Stylish haskell
+        run: |
+          ./fix-stylish-haskell.sh
+          git diff --exit-code
+
+
+      - name: cabal-fmt
+        run: |
+          ./fix-cabal-fmt.sh
+          git diff --exit-code
+
   build:
     runs-on: ubuntu-latest
     steps:
@@ -77,17 +114,18 @@ jobs:
           echo "LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH" >> $GITHUB_ENV
           echo "PKG_CONFIG_PATH=/usr/local/lib/pkgconfig:$PKG_CONFIG_PATH" >> $GITHUB_ENV
 
-      - name: Cache .cabal
-        id: cachecabal
-        uses: actions/cache@v3
-        with:
-          path: ~/.cabal
-          key: cabal-${{ hashFiles('cabal.project') }}-${{ hashFiles('**/*.cabal') }}
+      - uses: actions/checkout@v2
 
       - uses: haskell/actions/setup@v1
         with:
           ghc-version: '8.10.7'
           cabal-version: '3.10.1.0'
+
+      - name: Cache .cabal
+        uses: actions/cache@v3
+        with:
+          path: ~/.cabal
+          key: cabal-${{ hashFiles('cabal.project') }}-${{ hashFiles('**/*.cabal') }}
 
       # download & install cardano-dex-backend
       - name: Install cardano-dex-backend
@@ -103,8 +141,6 @@ jobs:
         with:
           ghc-version: '9.2.8'
           cabal-version: '3.10.1.0'
-
-      - uses: actions/checkout@v2
 
       - name: Set up cabal.project.local
         run: |
