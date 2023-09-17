@@ -1,4 +1,4 @@
-cabal-version:       2.2
+cabal-version:       3.0
 name:                armadillo-cli
 version:             0.1.0.0
 synopsis:            CLI
@@ -34,6 +34,58 @@ library
     lib
   ghc-options: -fobject-code -fno-ignore-interface-pragmas -fno-omit-interface-pragmas -fno-specialise
   exposed-modules:
+    Armadillo.Api
     Armadillo.Cli
+    Armadillo.Cli.Command
+    Armadillo.Server
   build-depends:
     base >= 4.16
+    , optparse-applicative
+    , servant
+    , servant-openapi3
+    , servant-client
+    , servant-client-core
+    , servant-server
+    , openapi3
+    , text
+    , aeson
+    , bytestring
+    , warp
+
+executable armadillo-cli
+    import: lang
+    main-is:          Main.hs
+    build-depends:
+        base >=4.14.3.0,
+        armadillo-cli
+    hs-source-dirs:   app
+    default-language: Haskell2010
+    ghc-options:
+      -threaded -rtsopts -O2
+
+test-suite armadillo-cli-test
+  type: exitcode-stdio-1.0
+  import: lang
+  main-is:          Spec.hs
+  other-modules:
+    Armadillo.Test.CliCommand
+    Armadillo.Test.Integration
+  build-depends:
+    base >=4.14.3.0,
+    armadillo-cli,
+    contra-tracer,
+    filepath,
+    process,
+    process-extras,
+    text,
+    tasty,
+    tasty-hunit,
+    convex-devnet,
+    servant-client,
+    servant-client-core,
+    http-client,
+    aeson,
+  hs-source-dirs:   test
+  default-language: Haskell2010
+  ghc-options:
+    -threaded -rtsopts -O2
