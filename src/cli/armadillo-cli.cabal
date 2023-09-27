@@ -62,6 +62,7 @@ library
     Armadillo.Cli
     Armadillo.Cli.Command
     Armadillo.Command
+    Armadillo.Orphans
     Armadillo.Scripts
     Armadillo.Server
     Armadillo.Server.Mock
@@ -70,6 +71,7 @@ library
     , aeson
     , aeson-pretty
     , base                                                              >=4.16
+    , base64-bytestring-type
     , bytestring
     , cardano-api
     , cardano-dex-contracts-offchain
@@ -82,10 +84,12 @@ library
     , either-result
     , http-client
     , katip
+    , lens
     , mtl
     , openapi3
     , optparse-applicative
     , plutus-ledger-api:{plutus-ledger-api, plutus-ledger-api-testlib}
+    , plutus-tx
     , servant
     , servant-client
     , servant-client-core
@@ -112,6 +116,7 @@ test-suite armadillo-cli-test
   main-is:          Spec.hs
   other-modules:
     Armadillo.Test.CliCommand
+    Armadillo.Test.DevEnv
     Armadillo.Test.Integration
     Armadillo.Test.Utils
 
@@ -134,6 +139,7 @@ test-suite armadillo-cli-test
     , servant-client-core
     , tasty
     , tasty-hunit
+    , temporary
     , text
 
   hs-source-dirs:   test
@@ -167,6 +173,7 @@ executable armadillo-cli-dev
     , servant-client-core
     , tasty
     , tasty-hunit
+    , temporary
     , text
 
   hs-source-dirs:   test app

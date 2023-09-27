@@ -5,26 +5,26 @@ module Armadillo.Test.Integration(
 ) where
 
 import qualified Armadillo.Api              as Api
-import           Armadillo.Cli.Command      (Command (..),
-                                             NodeClientConfig (..),
+import           Armadillo.Cli.Command      (Command (..), Fee (..),
                                              RefScriptCommand (..),
-                                             ServerConfig (..),
-                                             WalletClientOptions (..))
+                                             ServerConfig (..))
 import qualified Armadillo.Server.Mock      as Mock
-import           Armadillo.Test.CliCommand  (CliLog, apiHealth, apiPairs,
-                                             apiTransactions, runCliCommand,
+import           Armadillo.Test.CliCommand  (apiHealth, apiPairs,
+                                             apiTransactions, createCurrency,
+                                             createPool, runCliCommand,
                                              withHttpServer)
-import           Armadillo.Test.Utils       (checkRefScripts)
-import           Convex.Devnet.CardanoNode  (NodeLog, RunningNode (..),
-                                             getCardanoNodeVersion,
+import           Armadillo.Test.DevEnv      (DevEnv (..), TestLog (..),
+                                             withDevEnv)
+import           Armadillo.Test.Utils       (availableTokens, checkRefScripts,
+                                             nodeClientConfig)
+import qualified Cardano.Api                as C
+import           Convex.Devnet.CardanoNode  (getCardanoNodeVersion,
                                              withCardanoNodeDevnet)
 import           Convex.Devnet.Logging      (contramap, showLogsOnFailure)
 import           Convex.Devnet.Utils        (withTempDir)
-import           Convex.Devnet.WalletServer (RunningWalletServer (..),
-                                             WalletLog, getUTxOs, withWallet)
-import           Data.Aeson                 (FromJSON, ToJSON)
+import           Convex.Devnet.WalletServer (RunningWalletServer (..), getUTxOs,
+                                             withWallet)
 import           Data.List                  (isInfixOf)
-import           GHC.Generics               (Generic)
 import           System.FilePath            ((</>))
 import           Test.Tasty                 (TestTree, testGroup)
 import           Test.Tasty.HUnit           (assertBool, assertEqual, testCase)
@@ -38,7 +38,11 @@ tests = testGroup "integration"
   , testGroup "HTTP API"
     [ testCase "healthcheck" checkApiHealth
     , testCase "mock API" checkMockAPI
-    , testCase "deployScripts" checkDeployScript
+    ]
+  , testGroup "Commands"
+    [ testCase "deployScripts" checkDeployScript
+    , testCase "create currency" checkCreateCurrency
+    , testCase "create pool" checkCreatePool
     ]
   ]
 
@@ -74,48 +78,31 @@ checkWallet =
           pure ()
 
 checkDeployScript :: IO ()
-checkDeployScript =
-  showLogsOnFailure $ \tr -> do
-    withTempDir "armadillo" $ \tmp -> do
-      withCardanoNodeDevnet (contramap TNodeLog tr) tmp $ \node ->
-        withWallet (contramap TWallet tr) tmp node $ \RunningWalletServer{rwsOpConfigSigning} -> do
-          let outFile = tmp </> "reference-scripts.json"
-          runCliCommand (contramap TCli tr) tmp (RefScript (nodeClientConfig node) $ Deploy walletClientOptions rwsOpConfigSigning outFile)
-          checkRefScripts node outFile
+checkDeployScript = withDevEnv $ \DevEnv{tracer, tempDir, node, wallet=RunningWalletServer{rwsOpConfigSigning}, walletClientOptions} -> do
+  let outFile = tempDir </> "reference-scripts.json"
+  runCliCommand (contramap TCli tracer) tempDir (RefScript (nodeClientConfig node) $ Deploy walletClientOptions rwsOpConfigSigning outFile)
+  checkRefScripts node outFile
 
-data TestLog =
-  TNodeLog NodeLog
-  | TWallet WalletLog
-  | TCli CliLog
-  deriving stock (Show, Generic)
-  deriving anyclass (ToJSON, FromJSON)
+checkCreateCurrency :: IO ()
+checkCreateCurrency = withDevEnv $ \de@DevEnv{wallet, tracer} -> do
+  assetId <- createCurrency de "token1"
+  q <- availableTokens (contramap TWallet tracer) wallet assetId
+  assertEqual "Should have 1000 tokens" 1000 q
 
-nodeClientConfig :: RunningNode -> NodeClientConfig
-nodeClientConfig RunningNode{rnNodeConfigFile, rnNodeSocket} =
-  NodeClientConfig
-    { nccCardanoNodeSocket = rnNodeSocket
-    , nccCardanoNodeConfigFile = rnNodeConfigFile
-    }
+checkCreatePool :: IO ()
+checkCreatePool = withDevEnv $ \de -> do
+  asset1 <- createCurrency de "token1"
+  _p <- createPool de (Fee 123) asset1 C.AdaAssetId
+  pure ()
 
-walletClientOptions :: WalletClientOptions
-walletClientOptions =
-  WalletClientOptions
-    { wcoHost = "localhost"
-    , wcoPort = 9988 -- TODO: Magic number defined in Convex.Devnet.WalletServer. Export it there (as part of RunningWalletServer)
-    }
 
 {-| Start a dev env and wait for input on stdin before shutting it down.
 -}
 runDevEnv :: IO ()
-runDevEnv =
-  showLogsOnFailure $ \tr -> do
-    withTempDir "armadillo" $ \tmp -> do
-      withCardanoNodeDevnet (contramap TNodeLog tr) tmp $ \node ->
-        withWallet (contramap TWallet tr) tmp node $ \RunningWalletServer{rwsOpConfigSigning} -> do
-          withHttpServer (contramap TCli tr) tmp ServerConfig{scPort = 9088} $ \_server -> do
-            let outFile = tmp </> "reference-scripts.json"
-            putStrLn "Devnet running. Wallet port: 9988. API port: 9088"
-            runCliCommand (contramap TCli tr) tmp (RefScript (nodeClientConfig node) $ Deploy walletClientOptions rwsOpConfigSigning outFile)
-            putStrLn $ "Reference scripts have been deployed to " <> outFile
-            putStrLn "Press any key to exit"
-            readLn
+runDevEnv = withDevEnv $ \DevEnv{tracer, tempDir, node, wallet=RunningWalletServer{rwsOpConfigSigning}, walletClientOptions} -> do
+  let outFile = tempDir </> "reference-scripts.json"
+  putStrLn "Devnet running. Wallet port: 9988. API port: 9088"
+  runCliCommand (contramap TCli tracer) tempDir (RefScript (nodeClientConfig node) $ Deploy walletClientOptions rwsOpConfigSigning outFile)
+  putStrLn $ "Reference scripts have been deployed to " <> outFile
+  putStrLn "Press any key to exit"
+  readLn

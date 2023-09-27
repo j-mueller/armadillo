@@ -11,7 +11,10 @@ module Armadillo.Scripts(
   CardanoApiScriptError(..),
 
   v2SpendingScriptSerialised,
-  v2SpendingScript
+  v2SpendingScript,
+
+  v2MintingScript,
+  v2MintingScriptSerialised
 ) where
 
 import qualified Cardano.Api                   as C
@@ -47,3 +50,9 @@ v2SpendingScript = C.PlutusScriptSerialised $ alwaysSucceedingNAryFunction 3
 
 v2SpendingScriptSerialised :: SerialisedScript
 v2SpendingScriptSerialised = alwaysSucceedingNAryFunction 3
+
+v2MintingScript :: C.PlutusScript C.PlutusScriptV2
+v2MintingScript = C.PlutusScriptSerialised $ alwaysSucceedingNAryFunction 2
+
+v2MintingScriptSerialised :: SerialisedScript
+v2MintingScriptSerialised = alwaysSucceedingNAryFunction 2
