@@ -13,9 +13,11 @@ module Armadillo.Test.CliCommand(
   -- * Running the HTTP server
   RunningHttpServer(..),
   withHttpServer,
-  apiHealth
+  apiHealth,
+  apiPairs
 ) where
 
+import           Armadillo.Api               (Pair)
 import qualified Armadillo.Api               as Api
 import           Armadillo.Cli.Command       (Command (..),
                                               NodeClientConfig (..),
@@ -35,7 +37,8 @@ import           GHC.IO.Exception            (ExitCode (ExitSuccess))
 import           GHC.IO.Handle.Types         (Handle)
 import           Network.HTTP.Client         (defaultManagerSettings,
                                               newManager)
-import           Servant.Client              (ClientEnv, mkClientEnv)
+import           Servant.Client              (ClientEnv, ClientError,
+                                              mkClientEnv)
 import           Servant.Client.Core.BaseUrl (BaseUrl (..), Scheme (..))
 import           System.FilePath             ((</>))
 import           System.IO                   (BufferMode (NoBuffering),
@@ -164,5 +167,10 @@ withHttpServer tracer stateDirectory cfg action =
     action RunningHttpServer{rhClient, rhProcess}
 
 apiHealth :: RunningHttpServer -> IO ()
-apiHealth RunningHttpServer{rhClient} =
-  void (Api.getHealth rhClient >>= either (fail . show) pure)
+apiHealth = void . runApiCall Api.getHealth
+
+apiPairs :: RunningHttpServer -> IO [Pair]
+apiPairs = runApiCall Api.getPairs
+
+runApiCall :: (ClientEnv -> IO (Either ClientError a)) -> RunningHttpServer -> IO a
+runApiCall call RunningHttpServer{rhClient} = call rhClient >>= either (fail . show) pure

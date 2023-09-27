@@ -38,7 +38,8 @@ module Armadillo.Api(
   TxHistoryAPI,
   Healthcheck,
   -- * endpoints
-  getHealth
+  getHealth,
+  getPairs
 ) where
 
 import           Data.Aeson                      (FromJSON, FromJSONKey, ToJSON,
@@ -405,3 +406,8 @@ getHealth :: ClientEnv -> IO (Either ClientError NoContent)
 getHealth clientEnv = do
   let healthcheck :<|> _ = client (Proxy @API)
   runClientM healthcheck clientEnv
+
+getPairs :: ClientEnv -> IO (Either ClientError [Pair])
+getPairs clientEnv = do
+  let _healthcheck :<|> (pairs :<|> _) :<|> _ = client (Proxy @API)
+  runClientM pairs clientEnv

@@ -8,8 +8,8 @@ import           Armadillo.Cli.Command      (Command (..),
                                              RefScriptCommand (..),
                                              ServerConfig (..),
                                              WalletClientOptions (..))
-import           Armadillo.Test.CliCommand  (CliLog, apiHealth, runCliCommand,
-                                             withHttpServer)
+import           Armadillo.Test.CliCommand  (CliLog, apiHealth, apiPairs,
+                                             runCliCommand, withHttpServer)
 import           Armadillo.Test.Utils       (checkRefScripts)
 import           Convex.Devnet.CardanoNode  (NodeLog, RunningNode (..),
                                              getCardanoNodeVersion,
@@ -23,7 +23,7 @@ import           Data.List                  (isInfixOf)
 import           GHC.Generics               (Generic)
 import           System.FilePath            ((</>))
 import           Test.Tasty                 (TestTree, testGroup)
-import           Test.Tasty.HUnit           (assertBool, testCase)
+import           Test.Tasty.HUnit           (assertBool, assertEqual, testCase)
 
 tests :: TestTree
 tests = testGroup "integration"
@@ -33,6 +33,7 @@ tests = testGroup "integration"
     ]
   , testGroup "HTTP API"
     [ testCase "healthcheck" checkApiHealth
+    , testCase "mock API" checkMockAPI
     , testCase "deployScripts" checkDeployScript
     ]
   ]
@@ -48,6 +49,14 @@ checkApiHealth = do
     withTempDir "armadillo" $ \tmp -> do
       withHttpServer tr tmp ServerConfig{scPort = 9088} $ \server -> do
         apiHealth server
+
+checkMockAPI :: IO ()
+checkMockAPI = do
+  showLogsOnFailure $ \tr -> do
+    withTempDir "armadillo" $ \tmp -> do
+      withHttpServer tr tmp ServerConfig{scPort = 9088} $ \server -> do
+        apiPairs server >>= assertEqual "there should be two pairs" 2 . length
+
 
 checkWallet :: IO ()
 checkWallet =
