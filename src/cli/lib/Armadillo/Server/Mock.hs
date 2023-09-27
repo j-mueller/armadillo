@@ -7,7 +7,15 @@ module Armadillo.Server.Mock(
   mockTxHistoryAPI,
 
   -- * Values
-  djedAdaPair
+  djedAdaPair,
+
+  -- ** Individual routes
+  getHistoric,
+  getBuyTxns,
+  getSellTxns,
+  getAllTxns,
+  getChartForPair,
+  getChartForDex
   ) where
 
 import           Armadillo.Api        (AssetID (..), AssetListEntry (..),

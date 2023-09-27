@@ -5,35 +5,52 @@
 {-# LANGUAGE NamedFieldPuns     #-}
 {-# LANGUAGE NumericUnderscores #-}
 module Armadillo.Test.CliCommand(
+  -- * armadillo cli
   RunningCliProcess(..),
   withCliCommand,
   runCliCommand,
-  CliLog(..),
+
+  -- ** CLI Commands
+  createCurrency,
+  createPool,
 
   -- * Running the HTTP server
   RunningHttpServer(..),
+  ChainFollowerStartup(..),
   withHttpServer,
+  withHttpServerAndChainFollower,
   apiHealth,
   apiPairs,
   apiTransactions
+
 ) where
 
 import           Armadillo.Api               (Pair, PairID, Transaction)
 import qualified Armadillo.Api               as Api
-import           Armadillo.Cli.Command       (Command (..),
-                                              NodeClientConfig (..),
+import           Armadillo.Cli               (readJSONFile)
+import           Armadillo.Cli.Command       (Command (..), DebugCommand (..),
+                                              Fee (..), NodeClientConfig (..),
+                                              NodeClientStateFile (..),
+                                              PoolCommand (..),
                                               RefScriptCommand (..),
                                               ServerConfig (..),
-                                              WalletClientOptions (..))
+                                              WalletClientOptions (..),
+                                              unReadAssetId)
+import           Armadillo.Command           (ActivePool (..))
+import           Armadillo.Test.DevEnv       (CliLog (..), DevEnv (..),
+                                              TestLog (..))
+import           Armadillo.Test.Utils        (mkNodeClientConfig)
+import           Cardano.Api                 (AssetId, ChainPoint)
+import qualified Cardano.Api                 as C
 import           Control.Concurrent          (threadDelay)
 import           Control.Monad               (void)
-import           Control.Tracer              (Tracer, traceWith)
+import           Control.Tracer              (Tracer, contramap, traceWith)
+import           Convex.Devnet.CardanoNode   (RunningNode (..))
 import           Convex.Devnet.Utils         (failure, withLogFile)
+import           Convex.Devnet.WalletServer  (RunningWalletServer (..))
 import           Convex.Wallet.Operator      (OperatorConfigSigning (..))
-import           Data.Aeson                  (FromJSON, ToJSON)
-import           Data.Text                   (Text)
+import           Data.String                 (IsString (..))
 import qualified Data.Text                   as Text
-import           GHC.Generics                (Generic)
 import           GHC.IO.Exception            (ExitCode (ExitSuccess))
 import           GHC.IO.Handle.Types         (Handle)
 import           Network.HTTP.Client         (defaultManagerSettings,
@@ -44,14 +61,10 @@ import           Servant.Client.Core.BaseUrl (BaseUrl (..), Scheme (..))
 import           System.FilePath             ((</>))
 import           System.IO                   (BufferMode (NoBuffering),
                                               hSetBuffering)
+import           System.IO.Temp              (emptyTempFile)
 import           System.Process              (CreateProcess (..), ProcessHandle,
                                               StdStream (UseHandle), proc,
                                               waitForProcess, withCreateProcess)
-
-data CliLog =
-  MsgText{ msgText :: Text}
-  deriving stock (Show, Generic)
-  deriving anyclass (ToJSON, FromJSON)
 
 data RunningCliProcess =
   RunningCliProcess
@@ -79,19 +92,43 @@ runCliCommand tracer stateDirectory command =
     result <- waitForProcess processHandle
     case result of
       ExitSuccess -> pure ()
-      _ -> failure $ "runCliCommand: " <> commandString command <> " exits with failure code " <> show result
+      _ -> do
+        failure $ "runCliC ommand: " <> commandString command <> " exits with failure code " <> show result
+
+createCurrency :: DevEnv -> String -> IO AssetId
+createCurrency DevEnv{tempDir, wallet=RunningWalletServer{rwsOpConfigSigning}, node, tracer, walletClientOptions} name = do
+  outFile <- emptyTempFile tempDir "script-hash"
+  runCliCommand (contramap TCli tracer) tempDir (Debug (mkNodeClientConfig node) (Just outFile) $ CreateCurrency walletClientOptions rwsOpConfigSigning name)
+  scriptHash <- readJSONFile outFile >>= maybe (error $ "Unable to read JSON file " <> outFile) pure
+  pure $ C.AssetId (C.PolicyId scriptHash) (fromString name)
+
+createPool :: DevEnv -> Fee -> AssetId -> AssetId -> IO ActivePool
+createPool DevEnv{tempDir, wallet=RunningWalletServer{rwsOpConfigSigning}, node, tracer, walletClientOptions} fee assetX assetY = do
+  outFile <- emptyTempFile tempDir "active-pool"
+  runCliCommand (contramap TCli tracer) tempDir (Pool (mkNodeClientConfig node) (Just outFile) $ Create walletClientOptions rwsOpConfigSigning fee (assetX, 50) (assetY, 50))
+  readJSONFile outFile >>= maybe (error $ "Unable to read JSON file " <> outFile) pure
 
 commandString :: Command -> String
 commandString = \case
   StartServer{} -> "start-server"
   WriteAPIFile{} -> "write-api"
   RefScript{} -> "reference-scripts"
+  Pool{} -> "pool"
+  Debug{} -> "debug"
 
 cliProcess :: Maybe FilePath -> Command -> CreateProcess
 cliProcess cwd command = (proc cliExecutable strArgs){cwd} where
   serverPort = \case
-    StartServer ServerConfig{scPort} -> ["--http.port", show scPort]
+    StartServer ServerConfig{scPort} _ -> ["--http.port", show scPort]
     _ -> []
+
+  chainFollowerConf = \case
+    StartServer _ (Just (nodeClientConfig, NodeClientStateFile f, [])) ->
+      nodeClientConfigArgs nodeClientConfig
+      ++ ["--node-client.file", f]
+    StartServer _ (Just (_, _, _cp)) -> error "chainFollowerConf: not supported: ChainPoints"
+    _ -> []
+
   apiFile = \case
     WriteAPIFile{filePath} -> ["--api.file", filePath]
     _ -> []
@@ -102,37 +139,76 @@ cliProcess cwd command = (proc cliExecutable strArgs){cwd} where
       Check{}  -> ["check"]
     _ -> []
 
+  poolCom = \case
+    Pool _ _ c -> case c of
+      Create{} -> ["create"]
+    _ -> []
+
+  debugCom = \case
+    Debug _ _ c -> case c of
+      CreateCurrency{} -> ["create-currency"]
+    _ -> []
+
   nodeClient = \case
-    RefScript cfg _ -> nodeClientConfig cfg
+    RefScript cfg _ -> nodeClientConfigArgs cfg
+    Pool cfg _ _ -> nodeClientConfigArgs cfg
+    Debug cfg _ _ -> nodeClientConfigArgs cfg
     _ -> []
 
   walletClientOptions' = \case
-    RefScript _ (Deploy wco _ _) -> walletClientOptions wco
+    RefScript _ (Deploy wco _ _) -> walletClientOptionsCfg wco
+    Debug _ _ (CreateCurrency wco _ _) -> walletClientOptionsCfg wco
     _ -> []
 
   operatorSigningConfig' = \case
     RefScript _ (Deploy _ osc _) -> operatorSigningConfig osc
+    Debug _ _ (CreateCurrency _ osc _) -> operatorSigningConfig osc
+    _ -> []
+
+  tokenName = \case
+    Debug _ _ (CreateCurrency _ _ tn) -> ["--currency.name", tn]
+    _ -> []
+
+  debugOutFile = \case
+    Debug _ (Just f) _ -> ["--out.file", f]
+    Pool _ (Just f) _ -> ["--out.file", f]
     _ -> []
 
   outFile = \case
     RefScript _ (Deploy _ _ f) -> ["--out.file", f]
     _ -> []
 
+  poolArgs = \case
+    Pool _ _ com -> case com of
+      Create walletClient ocf (Fee n) pairX pairY ->
+        walletClientOptionsCfg walletClient
+        ++ operatorSigningConfig ocf
+        ++ ["--pool.fee", show n]
+        ++ ["--pool.x.assetID", unReadAssetId (fst pairX)]
+        ++ ["--pool.y.assetID", unReadAssetId (fst pairY)]
+    _ -> []
+
   strArgs =
     mconcat
       [ [commandString command]
       , serverPort command
+      , chainFollowerConf command
       , apiFile command
       , nodeClient command
+      , debugOutFile command
       , refCommand command
+      , poolCom command
+      , debugCom command
       , walletClientOptions' command
       , operatorSigningConfig' command
       , outFile command
+      , tokenName command
+      , poolArgs command
       , ["+RTS", "-N2"]
       ]
 
-walletClientOptions :: WalletClientOptions -> [String]
-walletClientOptions WalletClientOptions{wcoHost, wcoPort} =
+walletClientOptionsCfg :: WalletClientOptions -> [String]
+walletClientOptionsCfg WalletClientOptions{wcoHost, wcoPort} =
   [ "--wallet.host", wcoHost
   , "--wallet.port", show wcoPort
   ]
@@ -142,8 +218,8 @@ operatorSigningConfig OperatorConfigSigning{ocSigningKeyFile, ocStakeVerificatio
   ["--signing-key-file", ocSigningKeyFile]
   ++ maybe [] (\f -> ["--stake-verification-key-file", f]) ocStakeVerificationKeyFile
 
-nodeClientConfig :: NodeClientConfig -> [String]
-nodeClientConfig NodeClientConfig{nccCardanoNodeSocket, nccCardanoNodeConfigFile} =
+nodeClientConfigArgs :: NodeClientConfig -> [String]
+nodeClientConfigArgs NodeClientConfig{nccCardanoNodeSocket, nccCardanoNodeConfigFile} =
   [ "--node.socket", nccCardanoNodeSocket
   , "--node.config", nccCardanoNodeConfigFile
   ]
@@ -157,15 +233,34 @@ data RunningHttpServer =
     , rhClient  :: ClientEnv
     }
 
+{-| Whether to start the chain follower alongside the HTTP server
+-}
+data ChainFollowerStartup =
+  StartChainFollower FilePath RunningNode
+  | DontStartChainFollower
+
+chainFollowerConfig :: ChainFollowerStartup -> IO (Maybe (NodeClientConfig, NodeClientStateFile, [ChainPoint]))
+chainFollowerConfig = \case
+  DontStartChainFollower -> pure Nothing
+  StartChainFollower fp rn -> do
+    f <- NodeClientStateFile <$> emptyTempFile fp "node-client-state"
+    pure (Just (mkNodeClientConfig rn, f, []))
+
 {-| Start the armadillo HTTP server
 -}
-withHttpServer :: Tracer IO CliLog -> FilePath -> ServerConfig -> (RunningHttpServer -> IO a) -> IO a
-withHttpServer tracer stateDirectory cfg action =
-  let command = StartServer cfg
-  in withCliCommand tracer stateDirectory command $ \rhProcess -> do
+withHttpServer :: Tracer IO CliLog -> FilePath -> ServerConfig -> ChainFollowerStartup -> (RunningHttpServer -> IO a) -> IO a
+withHttpServer tracer stateDirectory cfg cfs action = do
+  command <- StartServer cfg <$> chainFollowerConfig cfs
+  withCliCommand tracer stateDirectory command $ \rhProcess -> do
     rhClient <- mkClientEnv <$> newManager defaultManagerSettings <*> pure (BaseUrl Http "localhost" (scPort cfg) "")
     threadDelay 2_000_000
     action RunningHttpServer{rhClient, rhProcess}
+
+{-| Start the armadillo HTTP server and the chain follower
+-}
+withHttpServerAndChainFollower :: DevEnv -> (RunningHttpServer -> IO a) -> IO a
+withHttpServerAndChainFollower DevEnv{tracer, tempDir, node} action =
+  withHttpServer (contramap TCli tracer) tempDir ServerConfig{scPort = 9088} (StartChainFollower tempDir node) action
 
 apiHealth :: RunningHttpServer -> IO ()
 apiHealth = void . runApiCall Api.getHealth

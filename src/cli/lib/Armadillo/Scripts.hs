@@ -11,9 +11,13 @@ module Armadillo.Scripts(
   CardanoApiScriptError(..),
 
   v2SpendingScriptSerialised,
-  v2SpendingScript
+  v2SpendingScript,
+
+  v2MintingScript,
+  v2MintingScriptSerialised
 ) where
 
+import           Cardano.Api                   (ScriptHash)
 import qualified Cardano.Api                   as C
 import qualified Cardano.Api.Shelley           as C
 import           ErgoDex.CardanoApi            (CardanoApiScriptError,
@@ -27,23 +31,30 @@ import           PlutusLedgerApi.Test.Examples (alwaysSucceedingNAryFunction)
 -- | Plutus scripts that we need for the dex
 data Scripts =
   Scripts
-    { sPoolValidator    :: C.PlutusScript C.PlutusScriptV2
-    , sSwapValidator    :: C.PlutusScript C.PlutusScriptV2
-    , sDepositValidator :: C.PlutusScript C.PlutusScriptV2
-    , sRedeemValidator  :: C.PlutusScript C.PlutusScriptV2
+    { sPoolValidator    :: (ScriptHash, C.PlutusScript C.PlutusScriptV2)
+    , sSwapValidator    :: (ScriptHash, C.PlutusScript C.PlutusScriptV2)
+    , sDepositValidator :: (ScriptHash, C.PlutusScript C.PlutusScriptV2)
+    , sRedeemValidator  :: (ScriptHash, C.PlutusScript C.PlutusScriptV2)
     }
     deriving Show
 
 compileScripts :: Either CardanoApiScriptError Scripts
 compileScripts =
+  let mkH s = (C.hashScript (C.PlutusScript C.PlutusScriptV2 s), s) in
   Scripts
-    <$> E.poolScript
-    <*> E.swapScript
-    <*> E.depositScript
-    <*> E.redeemScript
+    <$> fmap mkH E.poolScript
+    <*> fmap mkH E.swapScript
+    <*> fmap mkH E.depositScript
+    <*> fmap mkH E.redeemScript
 
 v2SpendingScript :: C.PlutusScript C.PlutusScriptV2
 v2SpendingScript = C.PlutusScriptSerialised $ alwaysSucceedingNAryFunction 3
 
 v2SpendingScriptSerialised :: SerialisedScript
 v2SpendingScriptSerialised = alwaysSucceedingNAryFunction 3
+
+v2MintingScript :: C.PlutusScript C.PlutusScriptV2
+v2MintingScript = C.PlutusScriptSerialised $ alwaysSucceedingNAryFunction 2
+
+v2MintingScriptSerialised :: SerialisedScript
+v2MintingScriptSerialised = alwaysSucceedingNAryFunction 2
