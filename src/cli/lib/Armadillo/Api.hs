@@ -1,14 +1,35 @@
-{-# LANGUAGE DataKinds        #-}
-{-# LANGUAGE DeriveAnyClass   #-}
-{-# LANGUAGE TypeApplications #-}
-{-# LANGUAGE TypeOperators    #-}
+{-# LANGUAGE DataKinds         #-}
+{-# LANGUAGE DeriveAnyClass    #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TypeApplications  #-}
+{-# LANGUAGE TypeOperators     #-}
 module Armadillo.Api(
   API,
   openAPI,
   writeApiToFile,
+  AssetID(..),
   Pair(..),
+  canonicalOrder,
+  mkPair,
+  PairID(..),
+  getPairId,
   Statistic(..),
+  Transaction(..),
+  Direction(..),
+  AssetListEntry(..),
+  UserAssetListEntry(..),
+  UserLiquidity(..),
+  UserID(..),
+  PairTimeseriesPoint(..),
+  DexTimeseriesPoint(..),
   HistoricPairData(..),
+  FarmEntry(..),
+  UserFarmEntry(..),
+  FarmAssetData(..),
+  UserFarmAssetData(..),
+  LBEArgs(..),
+  LBEResponse(..),
+  TxHistoryEntry(..),
   -- ** API Parts
   HistoricAPI,
   LiquidityAPI,
@@ -16,8 +37,6 @@ module Armadillo.Api(
   LBEAPI,
   TxHistoryAPI,
   Healthcheck,
-
-  WIPAPI,
   -- * endpoints
   getHealth
 ) where
@@ -31,11 +50,11 @@ import           Data.OpenApi.Internal.Utils     (encodePretty)
 import           Data.Proxy                      (Proxy (..))
 import           Data.Text                       (Text)
 import           GHC.Generics                    (Generic)
-import           Servant.API                     (Capture, Description, Get,
-                                                  JSON, NoContent, Post,
-                                                  QueryParam, ReqBody,
-                                                  ToHttpApiData, type (:>),
-                                                  (:<|>) (..))
+import           Servant.API                     (Capture, Description,
+                                                  FromHttpApiData, Get, JSON,
+                                                  NoContent, Post, QueryParam,
+                                                  ReqBody, ToHttpApiData,
+                                                  type (:>), (:<|>) (..))
 import           Servant.Client                  (ClientEnv, client, runClientM)
 import           Servant.Client.Core.ClientError (ClientError)
 import           Servant.OpenApi                 (toOpenApi)
@@ -43,26 +62,40 @@ import           Servant.OpenApi                 (toOpenApi)
 
 newtype AssetID = AssetID Text
   deriving stock (Eq, Ord, Show, Generic)
-  deriving newtype (ToJSON, FromJSON, ToJSONKey, FromJSONKey, ToSchema, ToParamSchema, ToHttpApiData)
+  deriving newtype (ToJSON, FromJSON, ToJSONKey, FromJSONKey, ToSchema, ToParamSchema, ToHttpApiData, FromHttpApiData)
 
 newtype PairID = PairID Text
   deriving stock (Eq, Ord, Show, Generic)
-  deriving newtype (ToJSON, FromJSON, ToJSONKey, FromJSONKey, ToParamSchema, ToSchema, ToHttpApiData)
+  deriving newtype (ToJSON, FromJSON, ToJSONKey, FromJSONKey, ToParamSchema, ToSchema, ToHttpApiData, FromHttpApiData)
 
 {-| User (wallet) ID
 -}
 newtype UserID = UserID Text
   deriving stock (Eq, Ord, Show, Generic)
-  deriving newtype (ToJSON, FromJSON, ToJSONKey, FromJSONKey, ToParamSchema, ToSchema, ToHttpApiData)
+  deriving newtype (ToJSON, FromJSON, ToJSONKey, FromJSONKey, ToParamSchema, ToSchema, ToHttpApiData, FromHttpApiData)
 
 data Pair =
   Pair
     { assetIdX :: AssetID
     , assetIdY :: AssetID
-    , paidID   :: PairID
+    , pairID   :: PairID
     }
     deriving stock (Eq, Ord, Show, Generic)
     deriving anyclass (ToJSON, FromJSON, ToSchema)
+
+canonicalOrder :: AssetID -> AssetID -> (AssetID, AssetID)
+canonicalOrder a b = (min a b, max a b)
+
+getPairId :: AssetID -> AssetID -> PairID
+getPairId a b =
+  let (AssetID a', AssetID b') = canonicalOrder a b
+  in PairID (a' <> "." <> b')
+
+mkPair :: AssetID -> AssetID -> Pair
+mkPair a b =
+  let (assetIdX, assetIdY) = canonicalOrder a b
+      pairID = getPairId a b
+  in Pair{ assetIdX, assetIdY, pairID}
 
 data Statistic =
   Statistic
@@ -97,7 +130,7 @@ type Limit = QueryParam "limit" Integer
 
 data Direction = Ascending | Descending
     deriving stock (Eq, Ord, Show, Generic)
-    deriving anyclass (ToJSON, FromJSON, ToSchema, ToParamSchema, ToHttpApiData)
+    deriving anyclass (ToJSON, FromJSON, ToSchema, ToParamSchema, ToHttpApiData, FromHttpApiData)
 
 type DirectionParam = QueryParam "direction" Direction
 
@@ -349,10 +382,6 @@ type API =
   :<|> FarmAPI
   :<|> LBEAPI
   :<|> TxHistoryAPI
-
--- API
-
-type WIPAPI = Healthcheck
 
 -- TRADE PANEL
 -- 1) Market swap

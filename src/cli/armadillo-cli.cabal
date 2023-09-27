@@ -64,6 +64,7 @@ library
     Armadillo.Command
     Armadillo.Scripts
     Armadillo.Server
+    Armadillo.Server.Mock
 
   build-depends:
     , aeson
