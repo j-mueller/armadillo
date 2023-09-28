@@ -139,3 +139,36 @@ test-suite armadillo-cli-test
   hs-source-dirs:   test
   default-language: Haskell2010
   ghc-options:      -threaded -rtsopts -O2
+
+executable armadillo-cli-dev
+  import:           lang
+  main-is:          Devnet.hs
+  other-modules:
+    Armadillo.Test.CliCommand
+    Armadillo.Test.Integration
+    Armadillo.Test.Utils
+
+  build-depends:
+    , aeson
+    , armadillo-cli
+    , base                 >=4.14.3.0
+    , bytestring
+    , cardano-api
+    , containers
+    , contra-tracer
+    , convex-base
+    , convex-devnet
+    , convex-wallet
+    , filepath
+    , http-client
+    , lens
+    , process
+    , servant-client
+    , servant-client-core
+    , tasty
+    , tasty-hunit
+    , text
+
+  hs-source-dirs:   test app
+  default-language: Haskell2010
+  ghc-options:      -threaded -rtsopts -O2

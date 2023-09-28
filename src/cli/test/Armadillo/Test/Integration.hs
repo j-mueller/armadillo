@@ -1,6 +1,7 @@
 {-# LANGUAGE DeriveAnyClass #-}
 module Armadillo.Test.Integration(
-  tests
+  tests,
+  runDevEnv
 ) where
 
 import           Armadillo.Cli.Command      (Command (..),
@@ -97,3 +98,19 @@ walletClientOptions =
     { wcoHost = "localhost"
     , wcoPort = 9988 -- TODO: Magic number defined in Convex.Devnet.WalletServer. Export it there (as part of RunningWalletServer)
     }
+
+{-| Start a dev env and wait for input on stdin before shutting it down.
+-}
+runDevEnv :: IO ()
+runDevEnv =
+  showLogsOnFailure $ \tr -> do
+    withTempDir "armadillo" $ \tmp -> do
+      withCardanoNodeDevnet (contramap TNodeLog tr) tmp $ \node ->
+        withWallet (contramap TWallet tr) tmp node $ \RunningWalletServer{rwsOpConfigSigning} -> do
+          withHttpServer (contramap TCli tr) tmp ServerConfig{scPort = 9088} $ \_server -> do
+            let outFile = tmp </> "reference-scripts.json"
+            putStrLn "Devnet running. Wallet port: 9988. API port: 9088"
+            runCliCommand (contramap TCli tr) tmp (RefScript (nodeClientConfig node) $ Deploy walletClientOptions rwsOpConfigSigning outFile)
+            putStrLn $ "Reference scripts have been deployed to " <> outFile
+            putStrLn "Press any key to exit"
+            readLn
