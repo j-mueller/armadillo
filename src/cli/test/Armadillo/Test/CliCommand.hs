@@ -18,14 +18,13 @@ module Armadillo.Test.CliCommand(
   apiTransactions
 ) where
 
-import           Armadillo.Api               (Pair, Transaction)
+import           Armadillo.Api               (Pair, PairID, Transaction)
 import qualified Armadillo.Api               as Api
 import           Armadillo.Cli.Command       (Command (..),
                                               NodeClientConfig (..),
                                               RefScriptCommand (..),
                                               ServerConfig (..),
                                               WalletClientOptions (..))
-import qualified Armadillo.Server.Mock       as Mock
 import           Control.Concurrent          (threadDelay)
 import           Control.Monad               (void)
 import           Control.Tracer              (Tracer, traceWith)
@@ -174,10 +173,8 @@ apiHealth = void . runApiCall Api.getHealth
 apiPairs :: RunningHttpServer -> IO [Pair]
 apiPairs = runApiCall Api.getPairs
 
-apiTransactions :: RunningHttpServer -> IO [Transaction]
-apiTransactions =
-  let p = Mock.djedAdaPair
-  in runApiCall (\k -> Api.getTransactions k Nothing (Api.pairID p))
+apiTransactions :: RunningHttpServer -> PairID -> IO [Transaction]
+apiTransactions server pair = runApiCall (\k -> Api.getTransactions k Nothing pair) server
 
 runApiCall :: (ClientEnv -> IO (Either ClientError a)) -> RunningHttpServer -> IO a
 runApiCall call RunningHttpServer{rhClient} = call rhClient >>= either (fail . show) pure

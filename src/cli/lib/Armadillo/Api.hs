@@ -16,6 +16,7 @@ module Armadillo.Api(
   Statistic(..),
   Transaction(..),
   Direction(..),
+  BuySell(..),
   AssetListEntry(..),
   UserAssetListEntry(..),
   UserLiquidity(..),
@@ -119,11 +120,12 @@ data HistoricPairData =
 data Transaction =
   Transaction
     { transactionID     :: Text
-    , transactionType   :: Text
+    , transactionType   :: Maybe BuySell
     , transactionPrice  :: Double
     , transactionInput  :: Double
     , transactionOutput :: Double
     , transactionOwner  :: Text
+    , transactionPair   :: Maybe PairID
     }
     deriving stock (Eq, Ord, Show, Generic)
     deriving anyclass (ToJSON, FromJSON, ToSchema)
@@ -131,6 +133,10 @@ data Transaction =
 type Limit = QueryParam "limit" Integer
 
 data Direction = Ascending | Descending
+    deriving stock (Eq, Ord, Show, Generic)
+    deriving anyclass (ToJSON, FromJSON, ToSchema, ToParamSchema, ToHttpApiData, FromHttpApiData)
+
+data BuySell = Buy | Sell
     deriving stock (Eq, Ord, Show, Generic)
     deriving anyclass (ToJSON, FromJSON, ToSchema, ToParamSchema, ToHttpApiData, FromHttpApiData)
 

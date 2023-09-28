@@ -4,11 +4,13 @@ module Armadillo.Test.Integration(
   runDevEnv
 ) where
 
+import qualified Armadillo.Api              as Api
 import           Armadillo.Cli.Command      (Command (..),
                                              NodeClientConfig (..),
                                              RefScriptCommand (..),
                                              ServerConfig (..),
                                              WalletClientOptions (..))
+import qualified Armadillo.Server.Mock      as Mock
 import           Armadillo.Test.CliCommand  (CliLog, apiHealth, apiPairs,
                                              apiTransactions, runCliCommand,
                                              withHttpServer)
@@ -58,7 +60,8 @@ checkMockAPI = do
     withTempDir "armadillo" $ \tmp -> do
       withHttpServer tr tmp ServerConfig{scPort = 9088} $ \server -> do
         apiPairs server >>= assertEqual "there should be two pairs" 2 . length
-        apiTransactions server >>= assertBool "there should be more than 0 transactions" . (not . null)
+        let p = Mock.djedAdaPair
+        apiTransactions server (Api.pairID p) >>= assertBool "there should be more than 0 transactions" . (not . null)
 
 
 checkWallet :: IO ()

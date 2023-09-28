@@ -12,7 +12,7 @@ jobs:
       - name: install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y fdfind
+          sudo apt-get install -y fd-find
       - uses: actions/checkout@v2
       - name: Cache .cabal
         id: cachecabal
