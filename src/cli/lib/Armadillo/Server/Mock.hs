@@ -7,6 +7,7 @@ module Armadillo.Server.Mock(
   mockTxHistoryAPI,
 
   -- * Values
+  djedAdaPair
   ) where
 
 import           Armadillo.Api        (AssetID (..), AssetListEntry (..),
@@ -53,6 +54,9 @@ adaAssetId = AssetID "ada"
 pairs :: [(AssetID, AssetID)]
 pairs = [(djedAssetId, adaAssetId), (shenAssetId, adaAssetId)]
 
+djedAdaPair :: Pair
+djedAdaPair = mkPair djedAssetId adaAssetId
+
 getPairs :: Monad m => m [Pair]
 getPairs = pure $ uncurry mkPair <$> pairs
 
@@ -77,23 +81,56 @@ getHistoric _ p =
   let err = throwError $ err404{ errBody = "Unknown pair: " <> fromString (show p) }
   in maybe err pure $ Map.lookup p pairData
 
+txn1 :: Transaction
+txn1 =
+  Transaction
+    { transactionID = "970092f3e476d9f2cfdebedae17074601a520a9632b9030cfd1a3c79d714679c"
+    , transactionType = "BUY"
+    , transactionPrice = 1.13
+    , transactionInput = 12.8
+    , transactionOutput = 11.67
+    , transactionOwner = "stake1u8uvqhg9m603kdm247mzhsw6g7whauwr9tc7wvrstcrnxj9jjsg6p"
+    }
+
+txn2 :: Transaction
+txn2 =
+  Transaction
+    { transactionID = "92f3e476d9f2cfde9d1a3c79d714679c700bedae17074601a520a9632b9030cf"
+    , transactionType = "SELL"
+    , transactionPrice = 1.13
+    , transactionInput = 12.8
+    , transactionOutput = 11.67
+    , transactionOwner = "stake1u8uvqhg9m603kdm247mzhsw6g7whauwr9tc7wvrstcrnxj9jjsg6p"
+    }
+
+txn3 :: Transaction
+txn3 =
+  Transaction
+    { transactionID = "92f3e476d9f2cfde9d1a3c79d714679c700bedae17074601a520a9632b9030cf"
+    , transactionType="SELL"
+    , transactionPrice = 1.13
+    , transactionInput = 12.8
+    , transactionOutput = 11.67
+    , transactionOwner = "stake1u8uvqhg9m603kdm247mzhsw6g7whauwr9tc7wvrstcrnxj9jjsg6p"
+    }
+
+allTxns :: [Transaction]
+allTxns = [txn1, txn2, txn3]
+
 getBuyTxns :: Monad m => Maybe Integer -> PairID -> m [Transaction]
-getBuyTxns _ _ = pure []
+getBuyTxns _ _ = pure $ filter ((==) "BUY" . transactionType) allTxns
 
 getSellTxns :: Monad m => Maybe Integer -> PairID -> m [Transaction]
-getSellTxns _ _ = pure []
+getSellTxns _ _ = pure $ filter ((==) "SELL" . transactionType) allTxns
 
 getAllTxns :: Monad m => Maybe Integer -> PairID -> m [Transaction]
-getAllTxns _ _ = pure []
+getAllTxns _ _ = pure allTxns
 
 getChartForPair :: Monad m => PairID -> m [(Text, PairTimeseriesPoint)]
 getChartForPair _ = pure []
 
 getChartForDex :: Monad m => m [(Text, DexTimeseriesPoint)]
 getChartForDex = pure []
-
-zeroStat :: Statistic
-zeroStat = Statistic 0 0 0
 
 mockLiquidityAPI :: Server LiquidityAPI
 mockLiquidityAPI =
@@ -130,7 +167,7 @@ getUserFarmEntries _ _ _ = pure []
 getFarmAssetData :: Monad m => AssetID -> m FarmAssetData
 getFarmAssetData _ = pure undefined
 
-getUserFarmAssetData :: Monad m => AssetID -> UserID -> m UserFarmAssetData
+getUserFarmAssetData :: AssetID -> UserID -> m UserFarmAssetData
 getUserFarmAssetData _ _ = undefined
 
 mockLBEAPI :: Server LBEAPI

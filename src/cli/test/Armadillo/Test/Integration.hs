@@ -10,7 +10,8 @@ import           Armadillo.Cli.Command      (Command (..),
                                              ServerConfig (..),
                                              WalletClientOptions (..))
 import           Armadillo.Test.CliCommand  (CliLog, apiHealth, apiPairs,
-                                             runCliCommand, withHttpServer)
+                                             apiTransactions, runCliCommand,
+                                             withHttpServer)
 import           Armadillo.Test.Utils       (checkRefScripts)
 import           Convex.Devnet.CardanoNode  (NodeLog, RunningNode (..),
                                              getCardanoNodeVersion,
@@ -57,6 +58,7 @@ checkMockAPI = do
     withTempDir "armadillo" $ \tmp -> do
       withHttpServer tr tmp ServerConfig{scPort = 9088} $ \server -> do
         apiPairs server >>= assertEqual "there should be two pairs" 2 . length
+        apiTransactions server >>= assertBool "there should be more than 0 transactions" . (not . null)
 
 
 checkWallet :: IO ()

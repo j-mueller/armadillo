@@ -39,7 +39,8 @@ module Armadillo.Api(
   Healthcheck,
   -- * endpoints
   getHealth,
-  getPairs
+  getPairs,
+  getTransactions
 ) where
 
 import           Data.Aeson                      (FromJSON, FromJSONKey, ToJSON,
@@ -411,3 +412,8 @@ getPairs :: ClientEnv -> IO (Either ClientError [Pair])
 getPairs clientEnv = do
   let _healthcheck :<|> (pairs :<|> _) :<|> _ = client (Proxy @API)
   runClientM pairs clientEnv
+
+getTransactions :: ClientEnv -> Maybe Integer -> PairID -> IO (Either ClientError [Transaction])
+getTransactions clientEnv limit pair = do
+  let _healthcheck :<|> (_pairs :<|> _historic :<|> _buyTxns :<|> _sellTxns :<|> allTxns :<|> _) :<|> _ = client (Proxy @API)
+  runClientM (allTxns limit pair) clientEnv
