@@ -59,6 +59,9 @@ library
   exposed-modules:
     Armadillo.Api
     Armadillo.BuildTx
+    Armadillo.ChainFollower
+    Armadillo.ChainFollower.PoolState
+    Armadillo.ChainFollower.State
     Armadillo.Cli
     Armadillo.Cli.Command
     Armadillo.Command
@@ -66,6 +69,7 @@ library
     Armadillo.Scripts
     Armadillo.Server
     Armadillo.Server.Mock
+    Armadillo.Utils
 
   build-depends:
     , aeson
@@ -95,6 +99,7 @@ library
     , servant-client-core
     , servant-openapi3
     , servant-server
+    , stm
     , text
     , transformers
     , warp

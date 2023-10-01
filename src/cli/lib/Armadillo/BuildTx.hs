@@ -67,7 +67,7 @@ deployReferenceScripts _operator = do
   Scripts{sPoolValidator, sSwapValidator, sDepositValidator, sRedeemValidator} <- liftEither Scripts.compileScripts
   let cred = C.PaymentCredentialByScript $ C.hashScript $ (C.PlutusScript C.PlutusScriptV2) Scripts.v2SpendingScript
   addr <- C.makeShelleyAddress <$> networkId <*> pure cred <*> pure C.NoStakeAddress
-  let mkAndAddOutput = prependTxOut . mkRefScriptTxOut addr
+  let mkAndAddOutput = prependTxOut . mkRefScriptTxOut addr . snd
   sequence_ $ mkAndAddOutput <$> [sPoolValidator, sSwapValidator, sSwapValidator, sDepositValidator, sRedeemValidator]
   pure
     ReferenceScripts
@@ -134,7 +134,7 @@ addPoolOutput poLiquidity poNFT poolCfg poolState = do
   protocolParameters <- queryProtocolParameters
   Scripts{sPoolValidator} <- liftEither Scripts.compileScripts
 
-  let addr = C.makeShelleyAddressInEra n (C.PaymentCredentialByScript (C.hashScript $ C.PlutusScript C.PlutusScriptV2 sPoolValidator)) C.NoStakeAddress
+  let addr = C.makeShelleyAddressInEra n (C.PaymentCredentialByScript (C.hashScript $ C.PlutusScript C.PlutusScriptV2 $ snd sPoolValidator)) C.NoStakeAddress
       dat = C.TxOutDatumInline C.ReferenceTxInsScriptsInlineDatumsInBabbageEra (toHashableScriptData poolCfg)
       value' = valueForState poLiquidity poNFT poolCfg poolState
   let txOut =
