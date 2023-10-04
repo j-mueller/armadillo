@@ -3,15 +3,17 @@
 {-# LANGUAGE ViewPatterns      #-}
 module Armadillo.Test.Utils(
   checkRefScripts,
+  checkScriptHashes,
   availableTokens,
-
-
-  -- * Options / config
-  mkNodeClientConfig
+  scriptsFromScriptsConfig
 ) where
 
 import           Armadillo.BuildTx          (ReferenceScripts (..))
-import           Armadillo.Cli.Command      (NodeClientConfig (..))
+import           Armadillo.Scripts          (Scripts (..),
+                                             readValidatorFromFile,
+                                             scriptsFromScriptsConfig)
+import           Armadillo.Test.AMMExecutor (ScriptsConfig (..))
+import           Armadillo.Test.CliCommand  (loadRefScripts)
 import           Cardano.Api                (AssetId, Quantity, TxIn)
 import qualified Cardano.Api                as C
 import qualified Cardano.Api.Shelley        as C
@@ -23,14 +25,13 @@ import           Convex.Devnet.WalletServer (RunningWalletServer,
                                              WalletLog (..), getUTxOs)
 import qualified Convex.Lenses              as L
 import           Convex.Utxos               (totalBalance)
-import           Data.Aeson                 (decode)
-import qualified Data.ByteString.Lazy       as BSL
 import           Data.Foldable              (traverse_)
 import qualified Data.Map                   as Map
+import           Test.Tasty.HUnit           (assertEqual)
 
 checkRefScripts :: RunningNode -> FilePath -> IO ()
 checkRefScripts RunningNode{rnNodeSocket, rnNetworkId} fp = do
-  ReferenceScripts{refScriptPool, refScriptSwap, refScriptDeposit, refScriptRedeem} :: ReferenceScripts TxIn  <- decode <$> BSL.readFile fp >>= maybe (error $ "checkRefScripts: failed to load file " <> fp) pure
+  ReferenceScripts{refScriptPool, refScriptSwap, refScriptDeposit, refScriptRedeem} <- loadRefScripts fp
   C.UTxO utxo <- queryUTxOWhole rnNetworkId rnNodeSocket
   let check :: String -> TxIn -> IO ()
       check name txI =
@@ -39,6 +40,13 @@ checkRefScripts RunningNode{rnNodeSocket, rnNetworkId} fp = do
           Just (L.view (L._TxOut . L._4) -> C.ReferenceScript _ (C.ScriptInAnyLang (C.PlutusScriptLanguage C.PlutusScriptV2) _))  -> pure ()
           Just txOut -> error (name <> ": Unexpected output: " <> show txOut)
   traverse_ (uncurry check) [("refScriptPool", refScriptPool), ("refScriptSwap", refScriptSwap), ("refScriptDeposit", refScriptDeposit), ("refScriptRedeem", refScriptRedeem)]
+
+checkScriptHashes :: Scripts -> ScriptsConfig -> IO ()
+checkScriptHashes Scripts{sPoolValidator, sDepositValidator} ScriptsConfig{depositScriptPath, poolV2ScriptPath} = do
+  readValidatorFromFile' poolV2ScriptPath >>=
+    assertEqual "pool validator" (fst sPoolValidator) . C.hashScript
+  readValidatorFromFile' depositScriptPath >>=
+      assertEqual "deposit validator" (fst sDepositValidator) . C.hashScript
 
 {-| Return the amount of tokens of the @AssetId@ that the wallet has
 -}
@@ -50,9 +58,6 @@ availableTokens tracer rws assetId = do
   traceWith tracer (WMsgText $ "Asset ID: " <> C.renderValuePretty (C.valueFromList [(assetId, 1000)]))
   pure result
 
-mkNodeClientConfig :: RunningNode -> NodeClientConfig
-mkNodeClientConfig RunningNode{rnNodeConfigFile, rnNodeSocket} =
-  NodeClientConfig
-    { nccCardanoNodeSocket = rnNodeSocket
-    , nccCardanoNodeConfigFile = rnNodeConfigFile
-    }
+readValidatorFromFile' :: FilePath -> IO (C.Script C.PlutusScriptV2)
+readValidatorFromFile' fp =
+  readValidatorFromFile fp >>= either (error . (<>) ("ReadValidatorFromFile: " <> fp <> " :") . show) pure

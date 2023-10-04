@@ -7,34 +7,46 @@ module Armadillo.Cli(
   readJSONFile
   ) where
 
-import qualified Armadillo.Api              as Api
-import           Armadillo.Cli.Command      (Command (..), DebugCommand (..),
-                                             Fee (..), PoolCommand (..),
-                                             RefScriptCommand (..),
-                                             ServerConfig (..),
-                                             localNodeConnectInfo, parseCommand,
-                                             walletClientEnv)
-import           Armadillo.Command          (CreatePoolParams (..))
-import qualified Armadillo.Command          as Command
-import qualified Armadillo.NodeClient       as NodeClient
-import qualified Armadillo.Server           as Server
-import           Control.Exception          (SomeException, catch)
-import           Control.Monad.IO.Class     (MonadIO (..))
-import           Convex.MonadLog            (runMonadLogKatip, withKatipLogging)
-import           Convex.Wallet.Operator     (loadOperatorFiles)
-import           Data.Aeson                 (FromJSON, ToJSON, decode)
-import           Data.Aeson.Encode.Pretty   (encodePretty)
-import qualified Data.ByteString.Lazy       as BSL
-import qualified Data.ByteString.Lazy.Char8 as LBS
-import           Data.Foldable              (traverse_)
-import           Data.String                (IsString (..))
-import qualified Katip                      as K
-import           Network.HTTP.Client        (Manager, defaultManagerSettings,
-                                             newManager)
-import           Options.Applicative        (customExecParser, disambiguate,
-                                             helper, idm, info, prefs,
-                                             showHelpOnEmpty, showHelpOnError)
-import           System.Exit                (exitFailure)
+import qualified Armadillo.Api                     as Api
+import           Armadillo.ChainFollower.PoolState (PoolOutput (..))
+import           Armadillo.Cli.Command             (Command (..),
+                                                    DebugCommand (..), Fee (..),
+                                                    PoolCommand (..),
+                                                    RefScriptCommand (..),
+                                                    ServerConfig (..),
+                                                    apiClientEnv,
+                                                    localNodeConnectInfo,
+                                                    parseCommand,
+                                                    walletClientEnv)
+import           Armadillo.Command                 (CreatePoolParams (..))
+import qualified Armadillo.Command                 as Command
+import qualified Armadillo.NodeClient              as NodeClient
+import           Armadillo.Scripts                 (loadScriptsConfig,
+                                                    scriptsFromScriptsConfig)
+import qualified Armadillo.Server                  as Server
+import           Armadillo.Utils                   (readJSONFile)
+import qualified Cardano.Api                       as C
+import           Control.Monad.IO.Class            (MonadIO (..))
+import           Convex.MonadLog                   (runMonadLogKatip,
+                                                    withKatipLogging)
+import           Convex.Wallet.Operator            (loadOperatorFiles)
+import           Data.Aeson                        (ToJSON)
+import           Data.Aeson.Encode.Pretty          (encodePretty)
+import qualified Data.ByteString.Lazy              as BSL
+import qualified Data.ByteString.Lazy.Char8        as LBS
+import           Data.Foldable                     (traverse_)
+import           Data.String                       (IsString (..))
+import           ErgoDex.Contracts.Pool            (PoolConfig (..))
+import qualified Katip                             as K
+import           Network.HTTP.Client               (Manager,
+                                                    defaultManagerSettings,
+                                                    newManager)
+import           Options.Applicative               (customExecParser,
+                                                    disambiguate, helper, idm,
+                                                    info, prefs,
+                                                    showHelpOnEmpty,
+                                                    showHelpOnError)
+import           System.Exit                       (exitFailure)
 
 runCli :: IO ()
 runCli = do
@@ -42,11 +54,12 @@ runCli = do
     command <- liftIO (customExecParser
                       (prefs $ disambiguate <> showHelpOnEmpty <> showHelpOnError)
                       (info (helper <*> parseCommand) idm))
+    scripts <- loadScriptsConfig >>= scriptsFromScriptsConfig >>= either (error "scriptsFromScriptsConfig failed") pure
     case command of
       StartServer{serverConfig, nodeClientConfig} -> do
         putStrLn $ "Starting server on port " <> show (scPort serverConfig)
         let (katipConfig, _, _) = config
-        stateVar <- traverse (\(cfg, stateFile, chainPoints) -> NodeClient.runArmadilloNodeClient katipConfig cfg stateFile chainPoints) nodeClientConfig
+        stateVar <- traverse (\(cfg, stateFile, chainPoints) -> NodeClient.runArmadilloNodeClient scripts katipConfig cfg stateFile chainPoints) nodeClientConfig
         Server.runServer stateVar serverConfig
       WriteAPIFile{filePath} -> do
         putStrLn $ "Writing API to " <> filePath
@@ -57,7 +70,7 @@ runCli = do
           Deploy walletClient opConfig outFile -> do
             walletEnv <- walletClientEnv <$> mgr <*> pure walletClient
             op <- loadOperatorFiles opConfig
-            x <- runMonadLogKatip config (Command.runBlockchainAction connectInfo nodeEnv walletEnv (Command.deployRefScripts op))
+            x <- runMonadLogKatip config (Command.runBlockchainAction connectInfo nodeEnv walletEnv (Command.deployRefScripts scripts op))
             case x of
               Left err -> do
                 putStrLn (show err)
@@ -81,12 +94,29 @@ runCli = do
                     , cppAssetClassX
                     , cppAssetClassY
                     }
-            result <- runMonadLogKatip config (Command.runBlockchainAction connectInfo nodeEnv walletEnv (Command.createPool params))
+            result <- runMonadLogKatip config (Command.runBlockchainAction connectInfo nodeEnv walletEnv (Command.createPool scripts params))
             case result of
               Left err -> do
                 putStrLn (show err)
                 exitFailure
               Right k -> traverse_ (\x' -> writeJSONFile x' k) outFile
+          Deposit walletClient operatorConfig apiClientOptions assetClassX assetClassY quantity -> do
+            op <- loadOperatorFiles operatorConfig
+            m <- mgr
+            let walletEnv = walletClientEnv m walletClient
+                apiEnv    = apiClientEnv m apiClientOptions
+                isMatchinPool PoolOutput{_poConfig=PoolConfig{poolX, poolY}} = True
+            pools <- Api.getPoolOutputs apiEnv >>= either (error . show . (<>) "getPoolOutputs failed: " . show) pure
+            case filter isMatchinPool pools of
+              [] -> error $ "No pool found for " <> show (assetClassX, assetClassY)
+              PoolOutput{_poConfig}:_ -> do
+                result <- runMonadLogKatip config (Command.runBlockchainAction connectInfo nodeEnv walletEnv $ Command.makeDeposit scripts op _poConfig quantity)
+                case result of
+                  Left err -> do
+                    putStrLn (show err)
+                    exitFailure
+                  Right tx ->
+                    traverse_ (\x' -> writeJSONFile x' (C.serialiseToTextEnvelope Nothing tx)) outFile
       Debug nodeConfig outFile com -> do
         (connectInfo, nodeEnv) <- localNodeConnectInfo nodeConfig
         case com of
@@ -109,9 +139,3 @@ mgr = newManager defaultManagerSettings
 -}
 writeJSONFile :: ToJSON a => FilePath -> a -> IO ()
 writeJSONFile file = BSL.writeFile file . encodePretty
-
-{-| Decode a JSON value from a file
--}
-readJSONFile :: FromJSON a => FilePath -> IO (Maybe a)
-readJSONFile fp =
-  catch (decode <$> BSL.readFile fp) $ \(_ :: SomeException) -> pure Nothing

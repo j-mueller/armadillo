@@ -4,6 +4,7 @@
 {-# LANGUAGE TypeApplications  #-}
 {-# LANGUAGE TypeOperators     #-}
 module Armadillo.Api(
+  FullAPI,
   API,
   openAPI,
   writeApiToFile,
@@ -38,30 +39,39 @@ module Armadillo.Api(
   LBEAPI,
   TxHistoryAPI,
   Healthcheck,
+  InternalAPI,
   -- * endpoints
   getHealth,
   getPairs,
-  getTransactions
+  getTransactions,
+
+  -- ** Internal endpoints
+  getPoolOutputs,
+  getDepositOutputs,
+
 ) where
 
-import           Data.Aeson                      (FromJSON, FromJSONKey, ToJSON,
-                                                  ToJSONKey)
-import qualified Data.ByteString.Lazy            as BSL
-import           Data.OpenApi                    (ToParamSchema, ToSchema)
-import           Data.OpenApi.Internal           (OpenApi)
-import           Data.OpenApi.Internal.Utils     (encodePretty)
-import           Data.Proxy                      (Proxy (..))
-import           Data.Text                       (Text)
-import           GHC.Generics                    (Generic)
-import           Servant.API                     (Capture, Description,
-                                                  FromHttpApiData, Get, JSON,
-                                                  NoContent, Post, QueryParam,
-                                                  ReqBody, ToHttpApiData,
-                                                  type (:>), (:<|>) (..))
-import           Servant.Client                  (ClientEnv, client, runClientM)
-import           Servant.Client.Core.ClientError (ClientError)
-import           Servant.OpenApi                 (toOpenApi)
-
+import           Armadillo.ChainFollower.DepositState (DepositOutput)
+import           Armadillo.ChainFollower.PoolState    (PoolOutput)
+import           Data.Aeson                           (FromJSON, FromJSONKey,
+                                                       ToJSON, ToJSONKey)
+import qualified Data.ByteString.Lazy                 as BSL
+import           Data.OpenApi                         (ToParamSchema, ToSchema)
+import           Data.OpenApi.Internal                (OpenApi)
+import           Data.OpenApi.Internal.Utils          (encodePretty)
+import           Data.Proxy                           (Proxy (..))
+import           Data.Text                            (Text)
+import           GHC.Generics                         (Generic)
+import           Servant.API                          (Capture, Description,
+                                                       FromHttpApiData, Get,
+                                                       JSON, NoContent, Post,
+                                                       QueryParam, ReqBody,
+                                                       ToHttpApiData, type (:>),
+                                                       (:<|>) (..))
+import           Servant.Client                       (ClientEnv, client,
+                                                       runClientM)
+import           Servant.Client.Core.ClientError      (ClientError)
+import           Servant.OpenApi                      (toOpenApi)
 
 newtype AssetID = AssetID Text
   deriving stock (Eq, Ord, Show, Generic)
@@ -383,6 +393,8 @@ type TxHistoryAPI =
 
 type Healthcheck = "healthcheck" :> Description "Is the server alive?" :> Get '[JSON] NoContent
 
+type FullAPI = API :<|> ("internal" :> InternalAPI)
+
 type API =
   Healthcheck
   :<|> HistoricAPI
@@ -423,3 +435,19 @@ getTransactions :: ClientEnv -> Maybe Integer -> PairID -> IO (Either ClientErro
 getTransactions clientEnv limit pair = do
   let _healthcheck :<|> (_pairs :<|> _historic :<|> _buyTxns :<|> _sellTxns :<|> allTxns :<|> _) :<|> _ = client (Proxy @API)
   runClientM (allTxns limit pair) clientEnv
+
+
+-- API for internal use (CLI)
+type InternalAPI =
+  "pools" :> Get '[JSON] [PoolOutput]
+  :<|> "deposits" :> Get '[JSON] [DepositOutput]
+
+getPoolOutputs :: ClientEnv -> IO (Either ClientError [PoolOutput])
+getPoolOutputs =
+  let pools :<|> _ = client (Proxy @("internal" :> InternalAPI))
+  in runClientM pools
+
+getDepositOutputs :: ClientEnv -> IO (Either ClientError [DepositOutput])
+getDepositOutputs =
+  let _pools :<|> deposits = client (Proxy @("internal" :> InternalAPI))
+  in runClientM deposits

@@ -4,28 +4,34 @@ follower and the DB
 -}
 module Armadillo.Server.Real(
   historicAPI,
+  internalAPI,
   fromCardanoAssetId
 ) where
 
-import           Armadillo.Api                     (AssetID (..), HistoricAPI,
-                                                    Pair (..), mkPair)
-import           Armadillo.ChainFollower.PoolState (PoolOutput (..),
-                                                    PoolState (..))
-import           Armadillo.ChainFollower.State     (ChainFollowerState (..))
-import qualified Armadillo.Server.Mock             as M
-import qualified Cardano.Api                       as C
-import           Control.Concurrent.STM            (TVar, atomically, readTVar)
-import           Control.Monad.Except              (MonadError (..), runExcept,
-                                                    throwError)
-import           Control.Monad.IO.Class            (MonadIO (..))
-import           Convex.PlutusLedger               (unTransAssetId)
+import           Armadillo.Api                        (AssetID (..),
+                                                       HistoricAPI, InternalAPI,
+                                                       Pair (..), mkPair)
+import           Armadillo.ChainFollower.DepositState (DepositOutput (..),
+                                                       DepositState (..))
+import           Armadillo.ChainFollower.PoolState    (PoolOutput (..),
+                                                       PoolState (..))
+import           Armadillo.ChainFollower.State        (ChainFollowerState (..))
+import qualified Armadillo.Server.Mock                as M
+import qualified Cardano.Api                          as C
+import           Control.Concurrent.STM               (TVar, atomically,
+                                                       readTVar)
+import           Control.Monad.Except                 (MonadError (..),
+                                                       runExcept, throwError)
+import           Control.Monad.IO.Class               (MonadIO (..))
+import           Convex.PlutusLedger                  (unTransAssetId)
 import qualified Convex.Utxos
-import qualified Data.Map                          as Map
-import           Data.Maybe                        (catMaybes)
-import           ErgoDex.Contracts.Pool            (PoolConfig (..))
-import           PlutusLedgerApi.V1.Value          (AssetClass)
-import           Servant.API                       ((:<|>) (..))
-import           Servant.Server                    (Server)
+import           Data.Foldable                        (toList)
+import qualified Data.Map                             as Map
+import           Data.Maybe                           (catMaybes)
+import           ErgoDex.Contracts.Pool               (PoolConfig (..))
+import           PlutusLedgerApi.V1.Value             (AssetClass)
+import           Servant.API                          ((:<|>) (..))
+import           Servant.Server                       (Server)
 
 historicAPI :: TVar ChainFollowerState -> Server HistoricAPI
 historicAPI tv =
@@ -67,3 +73,17 @@ fromCardanoAssetId = AssetID . (\case
   C.AssetId policyId assetName ->
     C.serialiseToRawBytesHexText policyId <> "." <> C.serialiseToRawBytesHexText assetName
     )
+
+internalAPI :: TVar ChainFollowerState -> Server InternalAPI
+internalAPI tv =
+  getPools tv :<|> getDeposits tv
+
+getPools :: MonadIO m => TVar ChainFollowerState -> m [PoolOutput]
+getPools tv = do
+  ChainFollowerState{cfsPoolState=PoolState{_utxos=(Convex.Utxos.UtxoSet u)}} <- liftIO (atomically (readTVar tv))
+  pure $ fmap snd $ toList u
+
+getDeposits :: MonadIO m => TVar ChainFollowerState -> m [DepositOutput]
+getDeposits tv = do
+  ChainFollowerState{cfsDepositState=DepositState{_depositUtxos=(Convex.Utxos.UtxoSet u)}} <- liftIO (atomically (readTVar tv))
+  pure $ fmap snd $ toList u

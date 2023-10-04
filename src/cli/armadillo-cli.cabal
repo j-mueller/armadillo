@@ -8,6 +8,12 @@ author:        Jann Müller <j-mueller@users.noreply.github.com>
 maintainer:    Jann Müller <j-mueller@users.noreply.github.com>
 copyright:     (c) 2023 Jann Müller
 build-type:    Simple
+data-files:
+  data/scripts/deposit.uplc
+  data/scripts/poolV1.uplc
+  data/scripts/poolV2.uplc
+  data/scripts/redeem.uplc
+  data/scripts/swap.uplc
 
 common lang
   default-language:   Haskell2010
@@ -59,6 +65,7 @@ library
   exposed-modules:
     Armadillo.Api
     Armadillo.BuildTx
+    Armadillo.ChainFollower.DepositState
     Armadillo.ChainFollower.PoolState
     Armadillo.ChainFollower.State
     Armadillo.Cli
@@ -76,25 +83,29 @@ library
     , aeson
     , aeson-pretty
     , base                                                              >=4.16
-    , base64-bytestring-type
+    , base16-bytestring
     , bytestring
     , cardano-api
+    , cardano-binary
     , cardano-dex-contracts-offchain
+    , cborg
     , containers
     , convex-base
     , convex-coin-selection
-    , convex-mockchain
     , convex-node-client
     , convex-wallet
-    , either-result
+    , dhall
+    , filepath
     , http-client
     , katip
     , lens
     , mtl
     , openapi3
     , optparse-applicative
+    , plutus-core
     , plutus-ledger-api:{plutus-ledger-api, plutus-ledger-api-testlib}
     , plutus-tx
+    , serialise
     , servant
     , servant-client
     , servant-client-core
@@ -105,6 +116,9 @@ library
     , transformers
     , warp
 
+  other-modules:   Paths_armadillo_cli
+  autogen-modules: Paths_armadillo_cli
+
 executable armadillo-cli
   import:           lang
   main-is:          Main.hs
@@ -114,21 +128,25 @@ executable armadillo-cli
 
   hs-source-dirs:   app
   default-language: Haskell2010
-  ghc-options:      -threaded -rtsopts -O2
+  ghc-options:      -threaded -rtsopts -O2 -with-rtsopts=-N2
 
 test-suite armadillo-cli-test
   import:           lang
   type:             exitcode-stdio-1.0
   main-is:          Spec.hs
   other-modules:
+    Armadillo.Test.AMMExecutor
     Armadillo.Test.CliCommand
     Armadillo.Test.DevEnv
+    Armadillo.Test.Explorer
     Armadillo.Test.Integration
     Armadillo.Test.Utils
 
+  other-modules:    Paths_armadillo_cli
   build-depends:
     , aeson
     , armadillo-cli
+    , async
     , base                 >=4.14.3.0
     , bytestring
     , cardano-api
@@ -137,16 +155,27 @@ test-suite armadillo-cli-test
     , convex-base
     , convex-devnet
     , convex-wallet
+    , dhall
     , filepath
+    , hlog
     , http-client
     , lens
+    , mtl
+    , ouroboros-consensus
+    , plutus-ledger-api
+    , plutus-tx
+    , prettyprinter
     , process
+    , servant
     , servant-client
     , servant-client-core
+    , servant-server
     , tasty
     , tasty-hunit
     , temporary
     , text
+    , time
+    , warp
 
   hs-source-dirs:   test
   default-language: Haskell2010
@@ -156,14 +185,17 @@ executable armadillo-cli-dev
   import:           lang
   main-is:          Devnet.hs
   other-modules:
+    Armadillo.Test.AMMExecutor
     Armadillo.Test.CliCommand
     Armadillo.Test.DevEnv
+    Armadillo.Test.Explorer
     Armadillo.Test.Integration
     Armadillo.Test.Utils
 
   build-depends:
     , aeson
     , armadillo-cli
+    , async
     , base                 >=4.14.3.0
     , bytestring
     , cardano-api
@@ -172,17 +204,29 @@ executable armadillo-cli-dev
     , convex-base
     , convex-devnet
     , convex-wallet
+    , dhall
     , filepath
+    , hlog
     , http-client
     , lens
+    , mtl
+    , ouroboros-consensus
+    , plutus-ledger-api
+    , plutus-tx
+    , prettyprinter
     , process
+    , servant
     , servant-client
     , servant-client-core
+    , servant-server
     , tasty
     , tasty-hunit
     , temporary
     , text
+    , time
+    , warp
 
+  other-modules:    Paths_armadillo_cli
   hs-source-dirs:   test app
   default-language: Haskell2010
   ghc-options:      -threaded -rtsopts -O2

@@ -12,12 +12,15 @@ module Armadillo.Command(
   CreatePoolParams(..),
   initialState,
   createPool,
-  createToken
+  createToken,
+  makeDeposit
 ) where
 
-import           Armadillo.BuildTx                  (PoolOutput (..),
+import           Armadillo.BuildTx                  (DEXBuildTxError,
+                                                     PoolOutput (..),
                                                      ReferenceScripts)
 import qualified Armadillo.BuildTx                  as BuildTx
+import           Armadillo.Scripts                  (Scripts)
 import           Cardano.Api                        (AssetId, AssetName,
                                                      CardanoMode, Env,
                                                      LocalNodeConnectInfo,
@@ -44,10 +47,12 @@ import           Convex.Query                       (BalanceAndSubmitError,
                                                      runWalletAPIQueryT,
                                                      selectOperatorUTxO)
 import           Convex.Utils                       (mapError, txnUtxos)
-import           Convex.Wallet.Operator             (Operator, Signing)
+import           Convex.Wallet.Operator             (Operator (oPaymentKey),
+                                                     Signing, verificationKey)
 import           Data.Aeson                         (FromJSON, ToJSON)
 import           ErgoDex.CardanoApi                 (CardanoApiScriptError)
-import           ErgoDex.Contracts.Pool             (PoolState (..), maxLqCap)
+import           ErgoDex.Contracts.Pool             (PoolConfig, PoolState (..),
+                                                     maxLqCap)
 import           GHC.Generics                       (Generic)
 import           Servant.Client                     (ClientEnv)
 
@@ -67,6 +72,7 @@ data TxCommandError =
   ScriptErr CardanoApiScriptError
   | BalanceSubmitFailed BalanceAndSubmitError
   | NoSuitableInputFound (Operator Signing)
+  | BuildTxError DEXBuildTxError
   deriving (Show)
 
 deployRefScripts ::
@@ -74,11 +80,12 @@ deployRefScripts ::
   , MonadError TxCommandError m
   , MonadUtxoQuery m
   ) =>
+  Scripts ->
   Operator Signing ->
   m (ReferenceScripts TxIn)
-deployRefScripts operator = do
+deployRefScripts scripts operator = do
   (cs, btx) <- mapError ScriptErr $ runBuildTxT $ do
-    r <- BuildTx.deployReferenceScripts operator
+    r <- BuildTx.deployReferenceScripts scripts operator
     queryProtocolParameters >>= BuildTx.setMinAdaDepositAll
     pure r
   finalTx <- mapError BalanceSubmitFailed $ balanceAndSubmitOperator operator Nothing (btx emptyTx)
@@ -114,8 +121,8 @@ initialState CreatePoolParams{cppAssetClassX=(_, Quantity reservesX), cppAssetCl
 
 {-| Create a new LP pool
 -}
-createPool :: (MonadUtxoQuery m, MonadBlockchain m, MonadError TxCommandError m) => CreatePoolParams -> m ActivePool
-createPool params@CreatePoolParams{cppOperator, cppFee, cppAssetClassX, cppAssetClassY} = do
+createPool :: (MonadUtxoQuery m, MonadBlockchain m, MonadError TxCommandError m) => Scripts -> CreatePoolParams -> m ActivePool
+createPool scripts params@CreatePoolParams{cppOperator, cppFee, cppAssetClassX, cppAssetClassY} = do
   let numTokens = Quantity maxLqCap
   (txi, _) <- selectOperatorUTxO cppOperator >>= maybe (throwError $ NoSuitableInputFound cppOperator) pure
   ((txOut, poConfig, poNFT, poLiquidity, poState), btx) <- runBuildTxT $ mapError ScriptErr $ do
@@ -127,7 +134,7 @@ createPool params@CreatePoolParams{cppOperator, cppFee, cppAssetClassX, cppAsset
                 lqToken
                 nft
     let iState = initialState params
-    (, cfg, nft, lqToken, iState) <$> BuildTx.addPoolOutput lqToken nft cfg iState
+    (, cfg, nft, lqToken, iState) <$> BuildTx.addPoolOutput scripts lqToken nft cfg iState
   let apPoolOutput =
         PoolOutput
           { poTxOut = txOut
@@ -146,3 +153,8 @@ createToken operator name quantity = do
   x <- mapError BalanceSubmitFailed (balanceAndSubmitOperator operator Nothing (btx emptyTx))
   pure (x, scriptHash)
 
+makeDeposit :: (MonadUtxoQuery m, MonadBlockchain m, MonadError TxCommandError m) => Scripts -> Operator Signing -> PoolConfig -> Quantity -> m (C.Tx C.BabbageEra)
+makeDeposit scripts operator poolCfg quantity = do
+  let pkh = C.verificationKeyHash $ verificationKey $ oPaymentKey operator
+  (_deposit, btx) <- runBuildTxT $ mapError BuildTxError $ BuildTx.deposit scripts pkh Nothing poolCfg quantity
+  mapError BalanceSubmitFailed (balanceAndSubmitOperator operator Nothing (btx emptyTx))

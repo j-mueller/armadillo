@@ -25,7 +25,7 @@ with-compiler: ghc-9.2.8
 source-repository-package
   type: git
   location: https://github.com/j-mueller/sc-tools.git
-  tag: f7224037c10c7e43321037768c7c40249a713a98
+  tag: 635c7cdff512109dcba0a329d0a1cc8459935c62
   subdir:
     src/devnet
     src/coin-selection
@@ -43,12 +43,6 @@ source-repository-package
     cardano-dex-contracts-offchain
     cardano-dex-contracts-onchain
 
--- https://github.com/obsidiansystems/dependent-sum-template/issues/5
--- requires cabal 3.10
-if impl(ghc >= 9.2)
-  constraints :
-      dependent-sum-template < 0.1.2
-
 -- Direct dependency.
 source-repository-package
   type: git
@@ -57,3 +51,17 @@ source-repository-package
   subdir:
     .
     plutarch-extra 
+
+source-repository-package
+  type: git
+  location: https://github.com/ergolabs/hlog
+  tag: f62f1cc1e2ed933d99dfeca8ade634bfe8984ee4
+
+-- https://github.com/obsidiansystems/dependent-sum-template/issues/5
+-- requires cabal 3.10
+if impl(ghc >= 9.2)
+  constraints :
+      dependent-sum-template < 0.1.2
+
+allow-newer:
+  hlog:text

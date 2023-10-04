@@ -4,7 +4,7 @@ module Armadillo.Utils (
 ) where
 
 import           Control.Exception        (SomeException, catch)
-import           Data.Aeson               (FromJSON, ToJSON, decode)
+import           Data.Aeson               (FromJSON, ToJSON, eitherDecode)
 import           Data.Aeson.Encode.Pretty (encodePretty)
 import qualified Data.ByteString.Lazy     as BSL
 
@@ -15,6 +15,6 @@ writeJSONFile file = BSL.writeFile file . encodePretty
 
 {-| Decode a JSON value from a file
 -}
-readJSONFile :: FromJSON a => FilePath -> IO (Maybe a)
+readJSONFile :: FromJSON a => FilePath -> IO (Either String a)
 readJSONFile fp =
-  catch (decode <$> BSL.readFile fp) $ \(_ :: SomeException) -> pure Nothing
+  catch (eitherDecode <$> BSL.readFile fp) $ \(ex :: SomeException) -> pure (Left (show ex))

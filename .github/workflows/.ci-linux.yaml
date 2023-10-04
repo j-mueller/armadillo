@@ -123,6 +123,11 @@ jobs:
           ghc-version: '9.2.8'
           cabal-version: '3.10.1.0'
 
+      - name: Install older GHC for dependencies
+        run: |
+          ghcup install ghc 8.10.7
+          ghcup install cabal 3.6.3.0
+
       - name: Cache .cabal
         uses: actions/cache@v3
         with:
@@ -130,14 +135,16 @@ jobs:
           key: cabal-${{ hashFiles('cabal.project') }}
 
       # download & install cardano-dex-backend
-      # - name: Install cardano-dex-backend
-      #   run: |
-      #     git clone https://github.com/j-mueller/cardano-dex-backend ~/cardano-dex-backend
-      #     cd ~/cardano-dex-backend
-      #     git checkout bc2bef59218e8f0e4c3223a3d4f764a4caa7107d
-      #     cabal update
-      #     cabal install --global --overwrite-policy=always amm-executor-app wallet-helper-app
-      #     cd -
+      - name: Install cardano-dex-backend
+        run: |
+          ghcup set ghc 8.10.7
+          git clone https://github.com/j-mueller/cardano-dex-backend ~/cardano-dex-backend
+          cd ~/cardano-dex-backend
+          git checkout bc2bef59218e8f0e4c3223a3d4f764a4caa7107d
+          cabal update
+          cabal install --global --overwrite-policy=always amm-executor-app wallet-helper-app
+          cd -
+          ghcup set ghc 9.2.8
 
       - name: Set up cabal.project.local
         run: |

@@ -12,6 +12,8 @@ module Armadillo.Cli.Command(
   parseCommand,
   DebugCommand(..),
   NodeClientStateFile(..),
+  ApiClientOptions(..),
+  apiClientEnv,
 
   -- * Internals exposed for debuggung
   readAssetId,
@@ -165,13 +167,15 @@ parseFee = fmap Fee $ option auto (long "pool.fee" <> value 100 <> help "Pool fe
 
 data PoolCommand =
   Create WalletClientOptions OperatorConfigSigning Fee (AssetId, Quantity) (AssetId, Quantity)
+  | Deposit WalletClientOptions OperatorConfigSigning ApiClientOptions AssetId AssetId Quantity
   deriving stock (Eq, Show)
 
 parseAssetId :: String -> Parser AssetId
 parseAssetId x = option (eitherReader readAssetId) (long ("pool." <> x <> ".assetID") <> help "Asset ID")
 
 parseQuantity :: Parser Quantity
-parseQuantity = pure (Quantity 50) -- FIXME
+parseQuantity =
+  Quantity <$> option auto (long "quantity" <> value 50 <> help "Amount of tokens")
 
 parseAssetIdQuantityPair :: String -> Parser (AssetId, Quantity)
 parseAssetIdQuantityPair x = (,) <$> parseAssetId x <*> parseQuantity
@@ -181,10 +185,13 @@ poolCom = command "pool" $
   info (Pool <$> parseNodeClientConfig <*> optional parseDebugOutFile <*> parsePoolCommand) (fullDesc <> progDesc "Manage liquidity pools")
 
 parsePoolCommand :: Parser PoolCommand
-parsePoolCommand = subparser poolCreate
+parsePoolCommand = subparser $ mconcat [poolCreate, poolDeposit]
 
 poolCreate :: Mod CommandFields PoolCommand
 poolCreate = command "create" $ info (Create <$> parseWalletClientOptions <*> parseOperatorConfigSigning <*> parseFee <*> parseAssetIdQuantityPair "x" <*> parseAssetIdQuantityPair "y") (fullDesc <> progDesc "Create a new pool")
+
+poolDeposit :: Mod CommandFields PoolCommand
+poolDeposit = command "deposit" $ info (Deposit <$> parseWalletClientOptions <*> parseOperatorConfigSigning <*> parseApiClientOptions <*> parseAssetId "x" <*> parseAssetId "y" <*> parseQuantity) (fullDesc <> progDesc "Make a deposit to a pool")
 
 data DebugCommand =
   CreateCurrency WalletClientOptions OperatorConfigSigning String -- ^ Create a currency with the given name
@@ -237,3 +244,22 @@ parseChainPoint = option rd (long "chain-point" <> metavar "BLOCKID:SLOTNO" <> h
                   (readMaybe blockString)
         pure $ C.ChainPoint slot hash
       _ -> fail "Expected: <64-digit hash>:<slot number>"
+
+{-| Options for the wallet server
+-}
+data ApiClientOptions =
+  ApiClientOptions
+    { acoHost :: String
+    , acoPort :: Int
+    }
+  deriving stock (Eq, Show)
+
+parseApiClientOptions :: Parser ApiClientOptions
+parseApiClientOptions =
+  ApiClientOptions
+    <$> strOption (long "api.host" <> value "localhost" <> help "API server host")
+    <*> option auto (long "api.port" <> value 9088 <> help "API server port")
+
+apiClientEnv :: HTTP.Manager -> ApiClientOptions -> ClientEnv
+apiClientEnv manager ApiClientOptions{acoHost, acoPort} =
+  mkClientEnv manager (BaseUrl Http acoHost acoPort "")

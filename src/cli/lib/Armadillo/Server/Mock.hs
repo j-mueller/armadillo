@@ -5,6 +5,7 @@ module Armadillo.Server.Mock(
   mockFarmAPI,
   mockLBEAPI,
   mockTxHistoryAPI,
+  mockInternalAPI,
 
   -- * Values
   djedAdaPair,
@@ -23,8 +24,9 @@ import           Armadillo.Api        (AssetID (..), AssetListEntry (..),
                                        Direction (..), FarmAPI,
                                        FarmAssetData (..), FarmEntry (..),
                                        HistoricAPI, HistoricPairData (..),
-                                       LBEAPI, LBEArgs (..), LBEResponse (..),
-                                       LiquidityAPI, Pair (..), PairID (..),
+                                       InternalAPI, LBEAPI, LBEArgs (..),
+                                       LBEResponse (..), LiquidityAPI,
+                                       Pair (..), PairID (..),
                                        PairTimeseriesPoint (..), Statistic (..),
                                        Transaction (..), TxHistoryAPI,
                                        TxHistoryEntry, UserAssetListEntry (..),
@@ -192,3 +194,6 @@ mockTxHistoryAPI = getTxHistory
 
 getTxHistory :: Monad m => UserID -> Maybe Integer -> m [TxHistoryEntry]
 getTxHistory _ _ = pure []
+
+mockInternalAPI :: Server InternalAPI
+mockInternalAPI = pure [] :<|> pure []

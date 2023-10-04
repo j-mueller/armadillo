@@ -5,33 +5,37 @@ module Armadillo.Test.Integration(
   runDevEnv
 ) where
 
-import qualified Armadillo.Api              as Api
-import           Armadillo.Cli.Command      (Command (..), Fee (..),
-                                             RefScriptCommand (..),
-                                             ServerConfig (..))
-import qualified Armadillo.Server.Mock      as Mock
-import           Armadillo.Test.CliCommand  (ChainFollowerStartup (..),
-                                             apiHealth, apiPairs,
-                                             apiTransactions, createCurrency,
-                                             createPool, runCliCommand,
-                                             withHttpServer,
-                                             withHttpServerAndChainFollower)
-import           Armadillo.Test.DevEnv      (DevEnv (..), TestLog (..),
-                                             withDevEnv)
-import           Armadillo.Test.Utils       (availableTokens, checkRefScripts,
-                                             mkNodeClientConfig)
-import qualified Cardano.Api                as C
-import           Control.Concurrent         (threadDelay)
-import           Convex.Devnet.CardanoNode  (getCardanoNodeVersion,
-                                             withCardanoNodeDevnet)
-import           Convex.Devnet.Logging      (contramap, showLogsOnFailure)
-import           Convex.Devnet.Utils        (withTempDir)
-import           Convex.Devnet.WalletServer (RunningWalletServer (..), getUTxOs,
-                                             withWallet)
-import           Data.List                  (isInfixOf)
-import           System.FilePath            ((</>))
-import           Test.Tasty                 (TestTree, testGroup)
-import           Test.Tasty.HUnit           (assertBool, assertEqual, testCase)
+import qualified Armadillo.Api                     as Api
+import           Armadillo.ChainFollower.PoolState (PoolOutput (..))
+import           Armadillo.Cli.Command             (Command (..), Fee (..),
+                                                    RefScriptCommand (..),
+                                                    ServerConfig (..))
+import qualified Armadillo.Server.Mock             as Mock
+import           Armadillo.Test.CliCommand         (ChainFollowerStartup (..),
+                                                    apiHealth, apiPairs,
+                                                    apiPools, apiTransactions,
+                                                    mkNodeClientConfig,
+                                                    runCliCommand,
+                                                    withHttpServer)
+import           Armadillo.Test.DevEnv             (DevEnv (..), TestLog (..),
+                                                    createCurrency, createPool,
+                                                    makeDeposit, withDevEnv)
+import           Armadillo.Test.Utils              (availableTokens,
+                                                    checkRefScripts)
+import qualified Cardano.Api                       as C
+import           Control.Concurrent                (threadDelay)
+import           Convex.Devnet.CardanoNode         (getCardanoNodeVersion,
+                                                    withCardanoNodeDevnet)
+import           Convex.Devnet.Logging             (contramap,
+                                                    showLogsOnFailure)
+import           Convex.Devnet.Utils               (withTempDir)
+import           Convex.Devnet.WalletServer        (RunningWalletServer (..),
+                                                    getUTxOs, withWallet)
+import           Data.List                         (isInfixOf)
+import           System.FilePath                   ((</>))
+import           Test.Tasty                        (TestTree, testGroup)
+import           Test.Tasty.HUnit                  (assertBool, assertEqual,
+                                                    testCase)
 
 tests :: TestTree
 tests = testGroup "integration"
@@ -48,6 +52,10 @@ tests = testGroup "integration"
     [ testCase "deployScripts" checkDeployScript
     , testCase "create currency" checkCreateCurrency
     , testCase "create pool" checkCreatePool
+    ]
+  , testGroup "AMM interop"
+    [ testCase "start AMM" checkStartAMM
+    , testCase "check deposit processing" checkDepositProcessing
     ]
   ]
 
@@ -100,12 +108,27 @@ checkCreatePool = withDevEnv $ \de -> do
   pure ()
 
 checkChainFollower :: IO ()
-checkChainFollower = withDevEnv $ \de -> do
-  withHttpServerAndChainFollower de $ \server -> do
-    asset1 <- createCurrency de "token1"
-    _p <- createPool de (Fee 123) asset1 C.AdaAssetId
-    threadDelay 3_000_000
-    apiPairs server >>= assertEqual "there should be one pair" 1 . length
+checkChainFollower = withDevEnv $ \de@DevEnv{httpServer} -> do
+  asset1 <- createCurrency de "token1"
+  _p <- createPool de (Fee 123) asset1 C.AdaAssetId
+  threadDelay 3_000_000
+  apiPairs httpServer >>= assertEqual "there should be one pair" 1 . length
+
+checkStartAMM :: IO ()
+checkStartAMM = withDevEnv $ \_ -> do
+  threadDelay 3_000_000
+
+checkDepositProcessing :: IO ()
+checkDepositProcessing = withDevEnv $ \de@DevEnv{httpServer} -> do
+  threadDelay 3_000_000
+  asset1 <- createCurrency de "token1"
+  _p <- createPool de (Fee 123) asset1 C.AdaAssetId
+  threadDelay 3_000_000
+  [PoolOutput{_poTxIn=oldTxI}] <- apiPools httpServer
+  makeDeposit de asset1 C.AdaAssetId 50
+  threadDelay 3_000_000
+  [PoolOutput{_poTxIn=newTxI}] <- apiPools httpServer
+  assertBool "Old should be different from new" (oldTxI /= newTxI)
 
 {-| Start a dev env and wait for input on stdin before shutting it down.
 -}

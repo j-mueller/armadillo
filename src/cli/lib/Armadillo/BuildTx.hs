@@ -1,8 +1,10 @@
-{-# LANGUAGE DeriveAnyClass    #-}
-{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE DeriveAnyClass     #-}
+{-# LANGUAGE NumericUnderscores #-}
+{-# LANGUAGE OverloadedStrings  #-}
 {-| Building transactions
 -}
 module Armadillo.BuildTx(
+  DEXBuildTxError(..),
   ReferenceScripts(..),
   deployReferenceScripts,
 
@@ -17,37 +19,50 @@ module Armadillo.BuildTx(
   poolConfig,
   addPoolOutput,
 
+  -- * Making deposits
+  Deposit(..),
+  deposit,
+
   -- * Etc.
   poolValue,
   mintToken
 ) where
 
-import           Armadillo.Orphans        ()
-import           Armadillo.Scripts        (CardanoApiScriptError, Scripts (..))
-import qualified Armadillo.Scripts        as Scripts
-import           Cardano.Api              (AssetId, AssetName, PolicyId,
-                                           Quantity (..), ScriptHash, TxIn,
-                                           Value)
-import qualified Cardano.Api              as C
-import qualified Cardano.Api.Shelley      as C
-import           Control.Lens             (_2, over, preview)
-import           Control.Monad.Except     (MonadError, liftEither, throwError)
-import           Convex.BuildTx           (MonadBuildTx, addBtx, mintPlutusV2,
-                                           prependTxOut, setMinAdaDeposit,
-                                           spendPublicKeyOutput)
-import           Convex.Class             (MonadBlockchain (..))
-import qualified Convex.Lenses            as L
-import           Convex.PlutusLedger      (transAssetId, transTxOutRef,
-                                           unTransAssetId)
-import           Convex.Scripts           (toHashableScriptData)
-import           Convex.Wallet.Operator   (Operator)
-import           Data.Aeson               (FromJSON, ToJSON)
-import           Data.Maybe               (fromMaybe)
-import           ErgoDex.CardanoApi       (poolLqMintingScript,
-                                           poolNftMintingScript)
-import           ErgoDex.Contracts.Pool   (PoolConfig (..), PoolState (..))
-import           GHC.Generics             (Generic)
-import           PlutusLedgerApi.V1.Value (AssetClass)
+import           Armadillo.Orphans               ()
+import           Armadillo.Scripts               (CardanoApiScriptError,
+                                                  Scripts (..))
+import qualified Armadillo.Scripts               as Scripts
+import           Cardano.Api                     (AssetId, AssetName, PolicyId,
+                                                  Quantity (..), ScriptHash,
+                                                  TxIn, Value)
+import qualified Cardano.Api                     as C
+import qualified Cardano.Api.Shelley             as C
+import           Control.Lens                    (_2, over, preview)
+import           Control.Monad.Except            (MonadError, liftEither,
+                                                  throwError)
+import           Convex.BuildTx                  (MonadBuildTx, addBtx,
+                                                  minAdaDeposit, mintPlutusV2,
+                                                  prependTxOut,
+                                                  setMinAdaDeposit,
+                                                  spendPublicKeyOutput)
+import           Convex.Class                    (MonadBlockchain (..))
+import qualified Convex.Lenses                   as L
+import           Convex.PlutusLedger             (transAssetId, transPubKeyHash,
+                                                  transStakeKeyHash,
+                                                  transTxOutRef, unTransAssetId)
+import           Convex.Scripts                  (toHashableScriptData)
+import           Convex.Utils                    (mapError)
+import           Convex.Wallet.Operator          (Operator)
+import           Data.Aeson                      (FromJSON, ToJSON)
+import           Data.Maybe                      (fromMaybe)
+import           ErgoDex.CardanoApi              (poolLqMintingScript,
+                                                  poolNftMintingScript)
+import           ErgoDex.Contracts.Pool          (PoolConfig (..),
+                                                  PoolState (..))
+import           ErgoDex.Contracts.Proxy.Deposit (DepositConfig)
+import qualified ErgoDex.Contracts.Proxy.Deposit as D
+import           GHC.Generics                    (Generic)
+import           PlutusLedgerApi.V1.Value        (AssetClass)
 
 data ReferenceScripts i =
   ReferenceScripts
@@ -59,12 +74,15 @@ data ReferenceScripts i =
     deriving stock (Eq, Show, Functor, Generic)
     deriving anyclass (ToJSON, FromJSON)
 
+data DEXBuildTxError =
+  BuildTxScriptError CardanoApiScriptError
+  | CardanoApiError C.SerialiseAsRawBytesError
+  deriving Show
+
 {-| Deploy the reference scripts
 -}
-deployReferenceScripts :: (MonadBuildTx m, MonadBlockchain m, MonadError CardanoApiScriptError m) => Operator k -> m (ReferenceScripts Int)
-deployReferenceScripts _operator = do
-  -- TODO: SCript spendable by operator
-  Scripts{sPoolValidator, sSwapValidator, sDepositValidator, sRedeemValidator} <- liftEither Scripts.compileScripts
+deployReferenceScripts :: (MonadBuildTx m, MonadBlockchain m) => Scripts -> Operator k -> m (ReferenceScripts Int)
+deployReferenceScripts Scripts{sPoolValidator, sSwapValidator, sDepositValidator, sRedeemValidator} _operator = do
   let cred = C.PaymentCredentialByScript $ C.hashScript $ (C.PlutusScript C.PlutusScriptV2) Scripts.v2SpendingScript
   addr <- C.makeShelleyAddress <$> networkId <*> pure cred <*> pure C.NoStakeAddress
   let mkAndAddOutput = prependTxOut . mkRefScriptTxOut addr . snd
@@ -128,11 +146,10 @@ createPoolLiquidityToken txInput q@(Quantity n) = do
     }
 
 -- | Add the pool output to a transaction
-addPoolOutput :: (MonadBlockchain m, MonadBuildTx m, MonadError CardanoApiScriptError m) => PoolLiquidityToken -> PoolNFT -> PoolConfig -> PoolState -> m (C.TxOut C.CtxTx C.BabbageEra)
-addPoolOutput poLiquidity poNFT poolCfg poolState = do
+addPoolOutput :: (MonadBlockchain m, MonadBuildTx m) => Scripts -> PoolLiquidityToken -> PoolNFT -> PoolConfig -> PoolState -> m (C.TxOut C.CtxTx C.BabbageEra)
+addPoolOutput Scripts{sPoolValidator} poLiquidity poNFT poolCfg poolState = do
   n <- networkId
   protocolParameters <- queryProtocolParameters
-  Scripts{sPoolValidator} <- liftEither Scripts.compileScripts
 
   let addr = C.makeShelleyAddressInEra n (C.PaymentCredentialByScript (C.hashScript $ C.PlutusScript C.PlutusScriptV2 $ snd sPoolValidator)) C.NoStakeAddress
       dat = C.TxOutDatumInline C.ReferenceTxInsScriptsInlineDatumsInBabbageEra (toHashableScriptData poolCfg)
@@ -152,7 +169,6 @@ valueForState liq nft cfg PoolState{reservesX, reservesY, liquidity} =
     , (poolXAssetId cfg, Quantity reservesX)
     , (poolYAssetId cfg, Quantity reservesY)
     ]
-
 
 txOutValue :: C.TxOut C.CtxTx C.BabbageEra -> C.Value
 txOutValue = fromMaybe mempty . preview (L._TxOut . _2 . L._TxOutValue)
@@ -201,3 +217,57 @@ mintToken :: MonadBuildTx m => AssetName -> Quantity -> m ScriptHash
 mintToken name quantity = do
   mintPlutusV2 Scripts.v2MintingScript () name quantity
   pure $ C.hashScript $ C.PlutusScript C.PlutusScriptV2 Scripts.v2MintingScript
+
+data Deposit =
+  Deposit
+    { doTxOut         :: C.TxOut C.CtxTx C.BabbageEra
+    , doDepositConfig :: DepositConfig
+    , doPoolConfig    :: PoolConfig
+    , doValue         :: Value
+    , doAssetX        :: Quantity
+    , doAssetY        :: Quantity
+    }
+
+deposit :: (MonadBuildTx m, MonadError DEXBuildTxError m, MonadBlockchain m) => Scripts -> C.Hash C.PaymentKey -> Maybe (C.Hash C.StakeKey) -> PoolConfig -> Quantity -> m Deposit
+deposit scripts verificationKey stakeKey cfg@PoolConfig{poolNft, poolX, poolY, poolLq} quantity = do
+  n <- networkId
+  protParams <- queryProtocolParameters
+  value <- mapError CardanoApiError (depositValue cfg quantity)
+  let depositCfg0 =
+        D.DepositConfig
+          { D.poolNft = poolNft
+          , D.tokenA = poolX
+          , D.tokenB = poolY
+          , D.tokenLp = poolLq
+          , D.exFee = 2_000_000 -- FIXME calculate fee
+          , D.rewardPkh = transPubKeyHash verificationKey
+          , D.stakePkh = transStakeKeyHash <$> stakeKey
+          , D.collateralAda = 2_000_000
+          }
+  let output0 = depositTxOut scripts n depositCfg0 value
+  let Quantity minAda = minAdaDeposit protParams output0
+  let depositCfg1 = depositCfg0{D.collateralAda = minAda}
+  let output1 = depositTxOut scripts n depositCfg1 (value <> C.lovelaceToValue (C.Lovelace minAda))
+  addBtx $ over L.txOuts ((:) output1)
+  pure $ Deposit output1 depositCfg1 cfg value quantity quantity
+
+{-| The @cardano-api@ value containing the tokens to be deposited to a liquidity pool.
+-}
+depositValue :: MonadError C.SerialiseAsRawBytesError m => PoolConfig -> Quantity -> m Value
+depositValue PoolConfig{poolX, poolY} quantity = do
+  aX <- liftEither (unTransAssetId poolX)
+  aY <- liftEither (unTransAssetId poolY)
+
+  -- We need to include enough Ada to run the deposit & pool validators
+  -- because the deposit validator only allows 2 inputs (so we can't have)
+  -- a 3rd Ada-only input)
+  let minAda = C.Lovelace 20_000_000
+  pure $ C.valueFromList [(aX, quantity), (aY, quantity)] <> C.lovelaceToValue minAda
+
+{-| The tx output for a token deposit
+-}
+depositTxOut :: Scripts -> C.NetworkId -> DepositConfig -> Value -> C.TxOut C.CtxTx C.BabbageEra
+depositTxOut Scripts{sDepositValidator} networkId cfg value =
+  let addr = C.makeShelleyAddressInEra networkId (C.PaymentCredentialByScript (fst sDepositValidator)) C.NoStakeAddress
+      dat = C.TxOutDatumInline C.ReferenceTxInsScriptsInlineDatumsInBabbageEra (toHashableScriptData cfg)
+  in (C.TxOut addr (C.TxOutValue C.MultiAssetInBabbageEra value) dat C.ReferenceScriptNone)

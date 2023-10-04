@@ -6,71 +6,85 @@
 {-# LANGUAGE NumericUnderscores #-}
 module Armadillo.Test.CliCommand(
   -- * armadillo cli
+  CliLog(..),
   RunningCliProcess(..),
   withCliCommand,
   runCliCommand,
+  mkNodeClientConfig,
 
   -- ** CLI Commands
-  createCurrency,
-  createPool,
+  deployScripts,
+  loadRefScripts,
 
   -- * Running the HTTP server
   RunningHttpServer(..),
   ChainFollowerStartup(..),
   withHttpServer,
-  withHttpServerAndChainFollower,
   apiHealth,
   apiPairs,
-  apiTransactions
-
+  apiTransactions,
+  apiDeposits,
+  apiPools
 ) where
 
-import           Armadillo.Api               (Pair, PairID, Transaction)
-import qualified Armadillo.Api               as Api
-import           Armadillo.Cli               (readJSONFile)
-import           Armadillo.Cli.Command       (Command (..), DebugCommand (..),
-                                              Fee (..), NodeClientConfig (..),
-                                              NodeClientStateFile (..),
-                                              PoolCommand (..),
-                                              RefScriptCommand (..),
-                                              ServerConfig (..),
-                                              WalletClientOptions (..),
-                                              unReadAssetId)
-import           Armadillo.Command           (ActivePool (..))
-import           Armadillo.Test.DevEnv       (CliLog (..), DevEnv (..),
-                                              TestLog (..))
-import           Armadillo.Test.Utils        (mkNodeClientConfig)
-import           Cardano.Api                 (AssetId, ChainPoint)
-import qualified Cardano.Api                 as C
-import           Control.Concurrent          (threadDelay)
-import           Control.Monad               (void)
-import           Control.Tracer              (Tracer, contramap, traceWith)
-import           Convex.Devnet.CardanoNode   (RunningNode (..))
-import           Convex.Devnet.Utils         (failure, withLogFile)
-import           Convex.Devnet.WalletServer  (RunningWalletServer (..))
-import           Convex.Wallet.Operator      (OperatorConfigSigning (..))
-import           Data.String                 (IsString (..))
-import qualified Data.Text                   as Text
-import           GHC.IO.Exception            (ExitCode (ExitSuccess))
-import           GHC.IO.Handle.Types         (Handle)
-import           Network.HTTP.Client         (defaultManagerSettings,
-                                              newManager)
-import           Servant.Client              (ClientEnv, ClientError,
-                                              mkClientEnv)
-import           Servant.Client.Core.BaseUrl (BaseUrl (..), Scheme (..))
-import           System.FilePath             ((</>))
-import           System.IO                   (BufferMode (NoBuffering),
-                                              hSetBuffering)
-import           System.IO.Temp              (emptyTempFile)
-import           System.Process              (CreateProcess (..), ProcessHandle,
-                                              StdStream (UseHandle), proc,
-                                              waitForProcess, withCreateProcess)
+import           Armadillo.Api                        (Pair, PairID,
+                                                       Transaction)
+import qualified Armadillo.Api                        as Api
+import           Armadillo.BuildTx                    (ReferenceScripts (..))
+import           Armadillo.ChainFollower.DepositState (DepositOutput)
+import           Armadillo.ChainFollower.PoolState    (PoolOutput)
+import           Armadillo.Cli.Command                (ApiClientOptions (..),
+                                                       Command (..),
+                                                       DebugCommand (..),
+                                                       Fee (..),
+                                                       NodeClientConfig (..),
+                                                       NodeClientStateFile (..),
+                                                       PoolCommand (..),
+                                                       RefScriptCommand (..),
+                                                       ServerConfig (..),
+                                                       WalletClientOptions (..),
+                                                       unReadAssetId)
+import           Cardano.Api                          (ChainPoint,
+                                                       Quantity (..), TxIn)
+import           Control.Concurrent                   (threadDelay)
+import           Control.Monad                        (void)
+import           Control.Tracer                       (Tracer, traceWith)
+import           Convex.Devnet.CardanoNode            (RunningNode (..))
+import           Convex.Devnet.Utils                  (failure, withLogFile)
+import           Convex.Wallet.Operator               (OperatorConfigSigning (..))
+import           Data.Aeson                           (FromJSON, ToJSON, decode)
+import qualified Data.ByteString.Lazy                 as BSL
+import           Data.Text                            (Text)
+import qualified Data.Text                            as Text
+import           GHC.Generics                         (Generic)
+import           GHC.IO.Exception                     (ExitCode (ExitSuccess))
+import           GHC.IO.Handle.Types                  (Handle)
+import           Network.HTTP.Client                  (defaultManagerSettings,
+                                                       newManager)
+import           Servant.Client                       (ClientEnv, ClientError,
+                                                       mkClientEnv)
+import           Servant.Client.Core.BaseUrl          (BaseUrl (..),
+                                                       Scheme (..))
+import           System.FilePath                      ((</>))
+import           System.IO                            (BufferMode (NoBuffering),
+                                                       hSetBuffering)
+import           System.IO.Temp                       (emptyTempFile)
+import           System.Process                       (CreateProcess (..),
+                                                       ProcessHandle,
+                                                       StdStream (UseHandle),
+                                                       proc, waitForProcess,
+                                                       withCreateProcess)
 
 data RunningCliProcess =
   RunningCliProcess
     { rcpCommand :: Command
     , rcpHandle  :: (Maybe Handle, Maybe Handle, Maybe Handle, ProcessHandle)
     }
+
+data CliLog =
+  MsgText{ msgText :: Text}
+  deriving stock (Show, Generic)
+  deriving anyclass (ToJSON, FromJSON)
 
 withCliCommand :: Tracer IO CliLog -> FilePath -> Command -> (RunningCliProcess -> IO a) -> IO a
 withCliCommand tracer stateDirectory command action = do
@@ -95,18 +109,14 @@ runCliCommand tracer stateDirectory command =
       _ -> do
         failure $ "runCliC ommand: " <> commandString command <> " exits with failure code " <> show result
 
-createCurrency :: DevEnv -> String -> IO AssetId
-createCurrency DevEnv{tempDir, wallet=RunningWalletServer{rwsOpConfigSigning}, node, tracer, walletClientOptions} name = do
-  outFile <- emptyTempFile tempDir "script-hash"
-  runCliCommand (contramap TCli tracer) tempDir (Debug (mkNodeClientConfig node) (Just outFile) $ CreateCurrency walletClientOptions rwsOpConfigSigning name)
-  scriptHash <- readJSONFile outFile >>= maybe (error $ "Unable to read JSON file " <> outFile) pure
-  pure $ C.AssetId (C.PolicyId scriptHash) (fromString name)
+deployScripts :: Tracer IO CliLog -> FilePath -> RunningNode -> WalletClientOptions -> OperatorConfigSigning -> IO (ReferenceScripts TxIn)
+deployScripts tracer tempDir node walletClientOptions opConfigSigning = do
+  let outFile = tempDir </> "reference-scripts.json"
+  runCliCommand tracer tempDir (RefScript (mkNodeClientConfig node) $ Deploy walletClientOptions opConfigSigning outFile)
+  loadRefScripts outFile
 
-createPool :: DevEnv -> Fee -> AssetId -> AssetId -> IO ActivePool
-createPool DevEnv{tempDir, wallet=RunningWalletServer{rwsOpConfigSigning}, node, tracer, walletClientOptions} fee assetX assetY = do
-  outFile <- emptyTempFile tempDir "active-pool"
-  runCliCommand (contramap TCli tracer) tempDir (Pool (mkNodeClientConfig node) (Just outFile) $ Create walletClientOptions rwsOpConfigSigning fee (assetX, 50) (assetY, 50))
-  readJSONFile outFile >>= maybe (error $ "Unable to read JSON file " <> outFile) pure
+loadRefScripts :: FilePath -> IO (ReferenceScripts TxIn)
+loadRefScripts fp = decode <$> BSL.readFile fp >>= maybe (error $ "loadRefScripts: failed to load file " <> fp) pure
 
 commandString :: Command -> String
 commandString = \case
@@ -141,7 +151,8 @@ cliProcess cwd command = (proc cliExecutable strArgs){cwd} where
 
   poolCom = \case
     Pool _ _ c -> case c of
-      Create{} -> ["create"]
+      Create{}  -> ["create"]
+      Deposit{} -> ["deposit"]
     _ -> []
 
   debugCom = \case
@@ -186,6 +197,13 @@ cliProcess cwd command = (proc cliExecutable strArgs){cwd} where
         ++ ["--pool.fee", show n]
         ++ ["--pool.x.assetID", unReadAssetId (fst pairX)]
         ++ ["--pool.y.assetID", unReadAssetId (fst pairY)]
+      Deposit walletClient ocf apiOpts pairX pairY (Quantity q) ->
+        walletClientOptionsCfg walletClient
+        ++ operatorSigningConfig ocf
+        ++ apiClientOpts apiOpts
+        ++ ["--pool.x.assetID", unReadAssetId pairX]
+        ++ ["--pool.y.assetID", unReadAssetId pairY]
+        ++ ["--quantity", show q]
     _ -> []
 
   strArgs =
@@ -213,6 +231,12 @@ walletClientOptionsCfg WalletClientOptions{wcoHost, wcoPort} =
   , "--wallet.port", show wcoPort
   ]
 
+apiClientOpts :: ApiClientOptions -> [String]
+apiClientOpts ApiClientOptions{acoHost, acoPort} =
+  [ "--api.host", acoHost
+  , "--api.port", show acoPort
+  ]
+
 operatorSigningConfig :: OperatorConfigSigning -> [String]
 operatorSigningConfig OperatorConfigSigning{ocSigningKeyFile, ocStakeVerificationKeyFile} =
   ["--signing-key-file", ocSigningKeyFile]
@@ -229,8 +253,9 @@ cliExecutable = "armadillo-cli"
 
 data RunningHttpServer =
   RunningHttpServer
-    { rhProcess :: RunningCliProcess
-    , rhClient  :: ClientEnv
+    { rhProcess    :: RunningCliProcess
+    , rhClient     :: ClientEnv
+    , rhApiOptions :: ApiClientOptions
     }
 
 {-| Whether to start the chain follower alongside the HTTP server
@@ -254,13 +279,8 @@ withHttpServer tracer stateDirectory cfg cfs action = do
   withCliCommand tracer stateDirectory command $ \rhProcess -> do
     rhClient <- mkClientEnv <$> newManager defaultManagerSettings <*> pure (BaseUrl Http "localhost" (scPort cfg) "")
     threadDelay 2_000_000
-    action RunningHttpServer{rhClient, rhProcess}
-
-{-| Start the armadillo HTTP server and the chain follower
--}
-withHttpServerAndChainFollower :: DevEnv -> (RunningHttpServer -> IO a) -> IO a
-withHttpServerAndChainFollower DevEnv{tracer, tempDir, node} action =
-  withHttpServer (contramap TCli tracer) tempDir ServerConfig{scPort = 9088} (StartChainFollower tempDir node) action
+    let rhApiOptions = ApiClientOptions{acoHost = "localhost", acoPort = scPort cfg}
+    action RunningHttpServer{rhClient, rhProcess, rhApiOptions}
 
 apiHealth :: RunningHttpServer -> IO ()
 apiHealth = void . runApiCall Api.getHealth
@@ -271,5 +291,18 @@ apiPairs = runApiCall Api.getPairs
 apiTransactions :: RunningHttpServer -> PairID -> IO [Transaction]
 apiTransactions server pair = runApiCall (\k -> Api.getTransactions k Nothing pair) server
 
+apiDeposits :: RunningHttpServer -> IO [DepositOutput]
+apiDeposits = runApiCall Api.getDepositOutputs
+
+apiPools :: RunningHttpServer -> IO [PoolOutput]
+apiPools = runApiCall Api.getPoolOutputs
+
 runApiCall :: (ClientEnv -> IO (Either ClientError a)) -> RunningHttpServer -> IO a
 runApiCall call RunningHttpServer{rhClient} = call rhClient >>= either (fail . show) pure
+
+mkNodeClientConfig :: RunningNode -> NodeClientConfig
+mkNodeClientConfig RunningNode{rnNodeConfigFile, rnNodeSocket} =
+  NodeClientConfig
+    { nccCardanoNodeSocket = rnNodeSocket
+    , nccCardanoNodeConfigFile = rnNodeConfigFile
+    }
