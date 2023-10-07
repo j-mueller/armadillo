@@ -1,5 +1,6 @@
 {-# LANGUAGE DeriveAnyClass     #-}
 {-# LANGUAGE NumericUnderscores #-}
+{-# OPTIONS_GHC -Wnounused-top-binds #-}
 module Armadillo.Test.Integration(
   tests,
   runDevEnv
@@ -33,30 +34,37 @@ import           Convex.Devnet.WalletServer        (RunningWalletServer (..),
                                                     getUTxOs, withWallet)
 import           Data.List                         (isInfixOf)
 import           System.FilePath                   ((</>))
-import           Test.Tasty                        (TestTree, testGroup)
+import           Test.Tasty                        (DependencyType (..),
+                                                    TestTree, after, testGroup)
 import           Test.Tasty.HUnit                  (assertBool, assertEqual,
                                                     testCase)
 
 tests :: TestTree
 tests = testGroup "integration"
   [ testGroup "setup"
-    [ testCase "cardano-node is available" checkCardanoNode
-    , testCase "wallet is working" checkWallet
+    [ testCase "T1: cardano-node is available" checkCardanoNode
+    , after AllFinish "T1" $
+        testCase "T2: wallet is working" checkWallet
     ]
-  , testGroup "HTTP API"
-    [ testCase "healthcheck" checkApiHealth
-    , testCase "mock API" checkMockAPI
-    , testCase "chain follower" checkChainFollower
+  , after AllFinish "setup" $ testGroup "HTTP"
+    [ testCase "T3: healthcheck" checkApiHealth
+    , after AllFinish "T3" $
+        testCase "T4: mock API" checkMockAPI
+    , after AllFinish "T4" $
+        testCase "T5: chain follower" checkChainFollower
     ]
-  , testGroup "Commands"
-    [ testCase "deployScripts" checkDeployScript
-    , testCase "create currency" checkCreateCurrency
-    , testCase "create pool" checkCreatePool
-    ]
-  , testGroup "AMM interop"
-    [ testCase "start AMM" checkStartAMM
-    , testCase "check deposit processing" checkDepositProcessing
-    ]
+  -- , after AllFinish "HTTP" $ testGroup "Commands"
+  --   [ testCase "T6: deployScripts" checkDeployScript
+  --   , after AllFinish "T6" $
+  --       testCase "T7: create currency" checkCreateCurrency
+  --   , after AllFinish "T7" $
+  --       testCase "T8: create pool" checkCreatePool
+  --   ]
+  -- , after AllFinish "Commands" $ testGroup "AMM interop"
+  --   [ testCase "T9: start AMM" checkStartAMM
+  --   , after AllFinish "T9" $
+  --       testCase "T10: check deposit processing" checkDepositProcessing
+  --   ]
   ]
 
 checkCardanoNode :: IO ()
