@@ -16,6 +16,7 @@ module Armadillo.Command(
 ) where
 
 import           Armadillo.BuildTx                  (DEXBuildTxError,
+                                                     DepositOutput (..),
                                                      PoolOutput (..),
                                                      ReferenceScripts)
 import qualified Armadillo.BuildTx                  as BuildTx
@@ -133,8 +134,9 @@ createToken operator name quantity = do
   x <- mapError BalanceSubmitFailed (balanceAndSubmitOperator operator Nothing (btx emptyTx))
   pure (x, scriptHash)
 
-makeDeposit :: (MonadUtxoQuery m, MonadBlockchain m, MonadError TxCommandError m) => Scripts -> Operator Signing -> PoolConfig -> Quantity -> m (C.Tx C.BabbageEra)
+makeDeposit :: (MonadUtxoQuery m, MonadBlockchain m, MonadError TxCommandError m) => Scripts -> Operator Signing -> PoolConfig -> Quantity -> m (DepositOutput TxIn)
 makeDeposit scripts operator poolCfg quantity = do
   let pkh = C.verificationKeyHash $ verificationKey $ oPaymentKey operator
-  (_deposit, btx) <- runBuildTxT $ mapError BuildTxError $ BuildTx.deposit scripts pkh Nothing poolCfg quantity
-  mapError BalanceSubmitFailed (balanceAndSubmitOperator operator Nothing (btx emptyTx))
+  (out, btx) <- runBuildTxT $ mapError BuildTxError $ BuildTx.deposit scripts pkh Nothing poolCfg quantity
+  tx <- mapError BalanceSubmitFailed (balanceAndSubmitOperator operator Nothing (btx emptyTx))
+  pure $ out $> fst (head (txnUtxos tx))

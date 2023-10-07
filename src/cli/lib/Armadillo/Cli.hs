@@ -25,7 +25,6 @@ import           Armadillo.Scripts                 (loadScriptsConfig,
                                                     scriptsFromScriptsConfig)
 import qualified Armadillo.Server                  as Server
 import           Armadillo.Utils                   (readJSONFile)
-import qualified Cardano.Api                       as C
 import           Control.Monad.IO.Class            (MonadIO (..))
 import           Convex.MonadLog                   (runMonadLogKatip,
                                                     withKatipLogging)
@@ -116,7 +115,7 @@ runCli = do
                     putStrLn (show err)
                     exitFailure
                   Right tx ->
-                    traverse_ (\x' -> writeJSONFile x' (C.serialiseToTextEnvelope Nothing tx)) outFile
+                    traverse_ (\x' -> writeJSONFile x' tx) outFile
       Debug nodeConfig outFile com -> do
         (connectInfo, nodeEnv) <- localNodeConnectInfo nodeConfig
         case com of

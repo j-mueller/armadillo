@@ -1,6 +1,6 @@
 {-# LANGUAGE DeriveAnyClass     #-}
 {-# LANGUAGE NumericUnderscores #-}
-{-# OPTIONS_GHC -Wnounused-top-binds #-}
+{-# OPTIONS_GHC -Wno-unused-top-binds #-}
 module Armadillo.Test.Integration(
   tests,
   runDevEnv

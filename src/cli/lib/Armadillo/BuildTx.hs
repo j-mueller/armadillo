@@ -24,7 +24,7 @@ module Armadillo.BuildTx(
   poolLiquidityAssetId,
 
   -- * Making deposits
-  Deposit(..),
+  DepositOutput(..),
   deposit,
 
   -- * Etc.
@@ -220,17 +220,16 @@ mintToken name quantity = do
   mintPlutusV2 Scripts.v2MintingScript () name quantity
   pure $ C.hashScript $ C.PlutusScript C.PlutusScriptV2 Scripts.v2MintingScript
 
-data Deposit =
-  Deposit
-    { doTxOut         :: C.TxOut C.CtxTx C.BabbageEra
-    , doDepositConfig :: DepositConfig
-    , doPoolConfig    :: PoolConfig
-    , doValue         :: Value
-    , doAssetX        :: Quantity
-    , doAssetY        :: Quantity
+data DepositOutput txi =
+  DepositOutput
+    { doCfg   :: DepositConfig
+    , doTxIn  :: txi
+    , doTxOut :: C.TxOut C.CtxTx C.BabbageEra
     }
+    deriving stock (Eq, Show, Generic, Functor)
+    deriving anyclass (ToJSON, FromJSON)
 
-deposit :: (MonadBuildTx m, MonadError DEXBuildTxError m, MonadBlockchain m) => Scripts -> C.Hash C.PaymentKey -> Maybe (C.Hash C.StakeKey) -> PoolConfig -> Quantity -> m Deposit
+deposit :: (MonadBuildTx m, MonadError DEXBuildTxError m, MonadBlockchain m) => Scripts -> C.Hash C.PaymentKey -> Maybe (C.Hash C.StakeKey) -> PoolConfig -> Quantity -> m (DepositOutput ())
 deposit scripts verificationKey stakeKey cfg@PoolConfig{poolNft, poolX, poolY, poolLq} quantity = do
   n <- networkId
   protParams <- queryProtocolParameters
@@ -251,7 +250,7 @@ deposit scripts verificationKey stakeKey cfg@PoolConfig{poolNft, poolX, poolY, p
   let depositCfg1 = depositCfg0{D.collateralAda = minAda}
   let output1 = depositTxOut scripts n depositCfg1 (value <> C.lovelaceToValue (C.Lovelace minAda))
   addBtx $ over L.txOuts ((:) output1)
-  pure $ Deposit output1 depositCfg1 cfg value quantity quantity
+  pure $ DepositOutput depositCfg1 () output1
 
 {-| The @cardano-api@ value containing the tokens to be deposited to a liquidity pool.
 -}

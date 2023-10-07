@@ -5,12 +5,13 @@ module Armadillo.Test.UnitTest(
   tests
 ) where
 
-import           Armadillo.BuildTx              (PoolLiquidityToken (..),
+import           Armadillo.BuildTx              (DepositOutput (..),
+                                                 PoolLiquidityToken (..),
                                                  PoolNFT (..), PoolOutput (..))
 import qualified Armadillo.BuildTx              as BuildTx
 import           Armadillo.Command              (CreatePoolParams (..),
-                                                 createPool)
-import           Armadillo.Scripts              (loadScriptsConfig,
+                                                 createPool, makeDeposit)
+import           Armadillo.Scripts              (Scripts, loadScriptsConfig,
                                                  scriptsFromScriptsConfig)
 import qualified Armadillo.Test.Scripts         as Scripts
 import           Cardano.Api                    (AssetName, PolicyId, TxIn,
@@ -52,6 +53,7 @@ tests = testGroup "emulator"
   [ testCase "create LQ pool NFT" (mockchainSucceeds createLQPoolNft)
   , testCase "create LQ pool liquidity" (mockchainSucceeds createLQPoolLiquidity)
   , testCase "create LQ pool" (mockchainSucceeds createLQPool)
+  , testCase "make a deposit" (mockchainSucceeds (createLQPool >>= depositLQ))
   ]
 
 createLQPoolNft :: (MonadIO m, MonadMockchain m, MonadUtxoQuery m, MonadFail m) => m (C.Tx C.BabbageEra, (PolicyId, AssetName))
@@ -77,7 +79,7 @@ createLQPoolLiquidity = do
 
 createLQPool :: (MonadIO m, MonadUtxoQuery m, MonadMockchain m, MonadFail m) => m (PoolOutput TxIn)
 createLQPool = failOnError $ do
-  scripts <- liftIO loadScriptsConfig >>= liftIO . scriptsFromScriptsConfig >>= either (fail . (<>) "Failed to load scripts: " . show) pure
+  scripts <- loadScripts
   _ <- payToOperator Wallet.w2 testOperator
   _ <- payToOperator Wallet.w2 testOperator
   pair1 <- Scripts.mintNativeToken Wallet.w2 "x" 1200
@@ -94,6 +96,12 @@ createLQPool = failOnError $ do
       vl = BuildTx.poolValue po
   liftIO $ assertEqual "Should have pool NFT" 1 (C.selectAsset vl nftAssetId)
   pure po
+
+depositLQ :: (MonadMockchain m, MonadUtxoQuery m, MonadFail m, MonadIO m) => PoolOutput TxIn -> m (DepositOutput TxIn)
+depositLQ PoolOutput{poConfig} = failOnError $ do
+  _ <- payToOperator Wallet.w2 testOperator
+  scripts <- loadScripts
+  makeDeposit scripts testOperator poConfig 10
 
 {-| Pay 100 Ada from one wallet to another
 -}
@@ -132,3 +140,6 @@ signingKeyFromCbor cbor = do
 
 failOnError :: (Show e, MonadFail m) => ExceptT e m a -> m a
 failOnError x = runExceptT x >>= either (fail . show) pure
+
+loadScripts :: (MonadFail m, MonadIO m) => m Scripts
+loadScripts = liftIO loadScriptsConfig >>= liftIO . scriptsFromScriptsConfig >>= either (fail . (<>) "Failed to load scripts: " . show) pure
