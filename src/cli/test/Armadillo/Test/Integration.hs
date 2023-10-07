@@ -124,10 +124,10 @@ checkDepositProcessing = withDevEnv $ \de@DevEnv{httpServer} -> do
   asset1 <- createCurrency de "token1"
   _p <- createPool de (Fee 123) asset1 C.AdaAssetId
   threadDelay 3_000_000
-  [PoolOutput{_poTxIn=oldTxI}] <- apiPools httpServer
+  [PoolOutput{poTxIn=oldTxI}] <- apiPools httpServer
   makeDeposit de asset1 C.AdaAssetId 50
   threadDelay 3_000_000
-  [PoolOutput{_poTxIn=newTxI}] <- apiPools httpServer
+  [PoolOutput{poTxIn=newTxI}] <- apiPools httpServer
   assertBool "Old should be different from new" (oldTxI /= newTxI)
 
 {-| Start a dev env and wait for input on stdin before shutting it down.

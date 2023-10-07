@@ -105,12 +105,12 @@ runCli = do
             m <- mgr
             let walletEnv = walletClientEnv m walletClient
                 apiEnv    = apiClientEnv m apiClientOptions
-                isMatchinPool PoolOutput{_poConfig=PoolConfig{poolX, poolY}} = True
+                isMatchinPool PoolOutput{poConfig=PoolConfig{poolX, poolY}} = True
             pools <- Api.getPoolOutputs apiEnv >>= either (error . show . (<>) "getPoolOutputs failed: " . show) pure
             case filter isMatchinPool pools of
               [] -> error $ "No pool found for " <> show (assetClassX, assetClassY)
-              PoolOutput{_poConfig}:_ -> do
-                result <- runMonadLogKatip config (Command.runBlockchainAction connectInfo nodeEnv walletEnv $ Command.makeDeposit scripts op _poConfig quantity)
+              PoolOutput{poConfig}:_ -> do
+                result <- runMonadLogKatip config (Command.runBlockchainAction connectInfo nodeEnv walletEnv $ Command.makeDeposit scripts op poConfig quantity)
                 case result of
                   Left err -> do
                     putStrLn (show err)

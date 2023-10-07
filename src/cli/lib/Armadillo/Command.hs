@@ -8,7 +8,6 @@ module Armadillo.Command(
 
   -- * Individual commands
   deployRefScripts,
-  ActivePool(..),
   CreatePoolParams(..),
   initialState,
   createPool,
@@ -49,7 +48,7 @@ import           Convex.Query                       (BalanceAndSubmitError,
 import           Convex.Utils                       (mapError, txnUtxos)
 import           Convex.Wallet.Operator             (Operator (oPaymentKey),
                                                      Signing, verificationKey)
-import           Data.Aeson                         (FromJSON, ToJSON)
+import           Data.Functor                       (($>))
 import           ErgoDex.CardanoApi                 (CardanoApiScriptError)
 import           ErgoDex.Contracts.Pool             (PoolConfig, PoolState (..),
                                                      maxLqCap)
@@ -93,15 +92,6 @@ deployRefScripts scripts operator = do
       mkIdx i = C.TxIn txId (C.TxIx $ fromIntegral i)
   pure (mkIdx <$> cs)
 
--- | An active liquidity pool
-data ActivePool =
-  ActivePool
-    { apPoolOutput :: PoolOutput
-    , apTxOut      :: (C.TxIn, C.TxOut C.CtxTx C.BabbageEra)
-    }
-    deriving stock (Eq, Show, Generic)
-    deriving anyclass (ToJSON, FromJSON)
-
 data CreatePoolParams =
   CreatePoolParams
     { cppOperator    :: Operator Signing
@@ -121,31 +111,21 @@ initialState CreatePoolParams{cppAssetClassX=(_, Quantity reservesX), cppAssetCl
 
 {-| Create a new LP pool
 -}
-createPool :: (MonadUtxoQuery m, MonadBlockchain m, MonadError TxCommandError m) => Scripts -> CreatePoolParams -> m ActivePool
+createPool :: (MonadUtxoQuery m, MonadBlockchain m, MonadError TxCommandError m) => Scripts -> CreatePoolParams -> m (PoolOutput TxIn)
 createPool scripts params@CreatePoolParams{cppOperator, cppFee, cppAssetClassX, cppAssetClassY} = do
   let numTokens = Quantity maxLqCap
   (txi, _) <- selectOperatorUTxO cppOperator >>= maybe (throwError $ NoSuitableInputFound cppOperator) pure
-  ((txOut, poConfig, poNFT, poLiquidity, poState), btx) <- runBuildTxT $ mapError ScriptErr $ do
+  (out, btx) <- runBuildTxT $ mapError ScriptErr $ do
     nft <- BuildTx.createPoolNft txi
     lqToken <- BuildTx.createPoolLiquidityToken txi numTokens
-    let cfg = BuildTx.poolConfig
-                (PL.transAssetId $ fst cppAssetClassX) (PL.transAssetId $ fst cppAssetClassY)
-                cppFee
-                lqToken
-                nft
-    let iState = initialState params
-    (, cfg, nft, lqToken, iState) <$> BuildTx.addPoolOutput scripts lqToken nft cfg iState
-  let apPoolOutput =
-        PoolOutput
-          { poTxOut = txOut
-          , poConfig
-          , poState
-          , poNFT
-          , poLiquidity
-          }
-
+    let poolCfg = BuildTx.poolConfig
+                    (PL.transAssetId $ fst cppAssetClassX) (PL.transAssetId $ fst cppAssetClassY)
+                    cppFee
+                    lqToken
+                    nft
+    BuildTx.addPoolOutput scripts poolCfg (initialState params)
   tx <- mapError BalanceSubmitFailed (balanceAndSubmitOperator cppOperator Nothing (btx emptyTx))
-  pure ActivePool{apPoolOutput, apTxOut = head (txnUtxos tx)}
+  pure $ out $> fst (head (txnUtxos tx))
 
 createToken :: (MonadUtxoQuery m, MonadBlockchain m, MonadError TxCommandError m) => Operator Signing -> AssetName -> Quantity -> m (C.Tx C.BabbageEra, ScriptHash)
 createToken operator name quantity = do

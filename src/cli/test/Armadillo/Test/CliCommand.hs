@@ -294,7 +294,7 @@ apiTransactions server pair = runApiCall (\k -> Api.getTransactions k Nothing pa
 apiDeposits :: RunningHttpServer -> IO [DepositOutput]
 apiDeposits = runApiCall Api.getDepositOutputs
 
-apiPools :: RunningHttpServer -> IO [PoolOutput]
+apiPools :: RunningHttpServer -> IO [PoolOutput TxIn]
 apiPools = runApiCall Api.getPoolOutputs
 
 runApiCall :: (ClientEnv -> IO (Either ClientError a)) -> RunningHttpServer -> IO a

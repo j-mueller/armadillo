@@ -11,12 +11,12 @@ module Armadillo.Test.DevEnv(
   makeDeposit
 ) where
 
+import           Armadillo.BuildTx          (PoolOutput)
 import           Armadillo.Cli              (readJSONFile)
 import           Armadillo.Cli.Command      (Command (..), DebugCommand (..),
                                              Fee (..), PoolCommand (..),
                                              ServerConfig (..),
                                              WalletClientOptions (..))
-import           Armadillo.Command          (ActivePool (..))
 import           Armadillo.Test.AMMExecutor (AMMLog (..), RunningAMMExecutor,
                                              withAMMExecutor)
 import           Armadillo.Test.CliCommand  (ChainFollowerStartup (..), CliLog,
@@ -27,7 +27,7 @@ import           Armadillo.Test.Explorer    (ExplorerLog (..),
                                              ExplorerPort (..),
                                              RunningExplorer (..),
                                              startExplorer)
-import           Cardano.Api                (AssetId, Quantity (..))
+import           Cardano.Api                (AssetId, Quantity (..), TxIn)
 import qualified Cardano.Api                as C
 import           Convex.Devnet.CardanoNode  (NodeLog, RunningNode (..),
                                              withCardanoNodeDevnet)
@@ -89,7 +89,7 @@ createCurrency DevEnv{tempDir, wallet=RunningWalletServer{rwsOpConfigSigning}, n
   scriptHash <- readJSONFile outFile >>= either (error . (<>) ("Unable to read JSON file " <> outFile <> ": ")) pure
   pure $ C.AssetId (C.PolicyId scriptHash) (fromString name)
 
-createPool :: DevEnv -> Fee -> AssetId -> AssetId -> IO ActivePool
+createPool :: DevEnv -> Fee -> AssetId -> AssetId -> IO (PoolOutput TxIn)
 createPool DevEnv{tempDir, wallet=RunningWalletServer{rwsOpConfigSigning}, node, tracer, walletClientOptions} fee assetX assetY = do
   outFile <- emptyTempFile tempDir "active-pool"
   runCliCommand (contramap TCli tracer) tempDir (Pool (mkNodeClientConfig node) (Just outFile) $ Create walletClientOptions rwsOpConfigSigning fee (assetX, 50) (assetY, 50))

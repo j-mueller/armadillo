@@ -50,7 +50,7 @@ data ConversionError =
 getPairs :: MonadIO m => TVar ChainFollowerState -> m [Pair]
 getPairs tv = do
   ChainFollowerState{cfsPoolState=PoolState{_utxos=Convex.Utxos.UtxoSet{Convex.Utxos._utxos}}} <- liftIO (atomically (readTVar tv))
-  catMaybes <$> traverse (getPair . _poConfig . snd . snd) (Map.toList _utxos)
+  catMaybes <$> traverse (getPair . poConfig . snd . snd) (Map.toList _utxos)
 
 getPair :: MonadIO m => PoolConfig -> m (Maybe Pair)
 getPair cfg = case runExcept (configPair cfg) of
@@ -78,7 +78,7 @@ internalAPI :: TVar ChainFollowerState -> Server InternalAPI
 internalAPI tv =
   getPools tv :<|> getDeposits tv
 
-getPools :: MonadIO m => TVar ChainFollowerState -> m [PoolOutput]
+getPools :: MonadIO m => TVar ChainFollowerState -> m [PoolOutput C.TxIn]
 getPools tv = do
   ChainFollowerState{cfsPoolState=PoolState{_utxos=(Convex.Utxos.UtxoSet u)}} <- liftIO (atomically (readTVar tv))
   pure $ fmap snd $ toList u

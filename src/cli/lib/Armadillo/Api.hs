@@ -53,6 +53,7 @@ module Armadillo.Api(
 
 import           Armadillo.ChainFollower.DepositState (DepositOutput)
 import           Armadillo.ChainFollower.PoolState    (PoolOutput)
+import           Cardano.Api                          (TxIn)
 import           Data.Aeson                           (FromJSON, FromJSONKey,
                                                        ToJSON, ToJSONKey)
 import qualified Data.ByteString.Lazy                 as BSL
@@ -439,10 +440,10 @@ getTransactions clientEnv limit pair = do
 
 -- API for internal use (CLI)
 type InternalAPI =
-  "pools" :> Get '[JSON] [PoolOutput]
+  "pools" :> Get '[JSON] [PoolOutput TxIn]
   :<|> "deposits" :> Get '[JSON] [DepositOutput]
 
-getPoolOutputs :: ClientEnv -> IO (Either ClientError [PoolOutput])
+getPoolOutputs :: ClientEnv -> IO (Either ClientError [PoolOutput TxIn])
 getPoolOutputs =
   let pools :<|> _ = client (Proxy @("internal" :> InternalAPI))
   in runClientM pools

@@ -34,7 +34,6 @@ import           Control.Monad.IO.Class        (MonadIO (..))
 import           Convex.Utils                  (liftEither)
 import qualified Data.ByteString.Lazy          as BSL
 import           Data.ByteString.Short         (toShort)
-import           Data.Proxy                    (Proxy (..))
 import           Dhall                         (ToDhall)
 import           ErgoDex.CardanoApi            (CardanoApiScriptError,
                                                 poolLqMintingScript,

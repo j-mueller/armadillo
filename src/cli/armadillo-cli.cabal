@@ -140,20 +140,25 @@ test-suite armadillo-cli-test
     Armadillo.Test.DevEnv
     Armadillo.Test.Explorer
     Armadillo.Test.Integration
+    Armadillo.Test.Scripts
+    Armadillo.Test.UnitTest
     Armadillo.Test.Utils
+    Armadillo.Test.Validator
 
   other-modules:    Paths_armadillo_cli
   build-depends:
     , aeson
     , armadillo-cli
     , async
-    , base                 >=4.14.3.0
+    , base                   >=4.14.3.0
     , bytestring
     , cardano-api
     , containers
     , contra-tracer
     , convex-base
+    , convex-coin-selection
     , convex-devnet
+    , convex-mockchain
     , convex-wallet
     , dhall
     , filepath
@@ -164,6 +169,7 @@ test-suite armadillo-cli-test
     , ouroboros-consensus
     , plutus-ledger-api
     , plutus-tx
+    , plutus-tx-plugin
     , prettyprinter
     , process
     , servant
@@ -180,6 +186,9 @@ test-suite armadillo-cli-test
   hs-source-dirs:   test
   default-language: Haskell2010
   ghc-options:      -threaded -rtsopts -O2
+  ghc-options:
+    -fobject-code -fno-ignore-interface-pragmas
+    -fno-omit-interface-pragmas -fno-specialise
 
 executable armadillo-cli-dev
   import:           lang

@@ -18,6 +18,10 @@ module Armadillo.BuildTx(
   PoolOutput(..),
   poolConfig,
   addPoolOutput,
+  poolXAssetId,
+  poolYAssetId,
+  poolNftAssetId,
+  poolLiquidityAssetId,
 
   -- * Making deposits
   Deposit(..),
@@ -146,26 +150,26 @@ createPoolLiquidityToken txInput q@(Quantity n) = do
     }
 
 -- | Add the pool output to a transaction
-addPoolOutput :: (MonadBlockchain m, MonadBuildTx m) => Scripts -> PoolLiquidityToken -> PoolNFT -> PoolConfig -> PoolState -> m (C.TxOut C.CtxTx C.BabbageEra)
-addPoolOutput Scripts{sPoolValidator} poLiquidity poNFT poolCfg poolState = do
+addPoolOutput :: (MonadBlockchain m, MonadBuildTx m) => Scripts -> PoolConfig -> PoolState -> m (PoolOutput ())
+addPoolOutput Scripts{sPoolValidator} poolCfg poolState = do
   n <- networkId
   protocolParameters <- queryProtocolParameters
 
   let addr = C.makeShelleyAddressInEra n (C.PaymentCredentialByScript (C.hashScript $ C.PlutusScript C.PlutusScriptV2 $ snd sPoolValidator)) C.NoStakeAddress
       dat = C.TxOutDatumInline C.ReferenceTxInsScriptsInlineDatumsInBabbageEra (toHashableScriptData poolCfg)
-      value' = valueForState poLiquidity poNFT poolCfg poolState
+      value' = valueForState poolCfg poolState
   let txOut =
         setMinAdaDeposit protocolParameters
         $ C.TxOut addr (C.TxOutValue C.MultiAssetInBabbageEra value') dat C.ReferenceScriptNone -- TODO: Use a ref. script?
 
   addBtx $ over L.txOuts ((:) txOut)
-  pure txOut
+  pure PoolOutput{poTxOut = txOut, poConfig = poolCfg, poTxIn = ()}
 
-valueForState :: PoolLiquidityToken -> PoolNFT -> PoolConfig -> PoolState -> Value
-valueForState liq nft cfg PoolState{reservesX, reservesY, liquidity} =
+valueForState :: PoolConfig -> PoolState -> Value
+valueForState cfg PoolState{reservesX, reservesY, liquidity} =
   C.valueFromList
-    [ (poolNftAssetId nft, 1)
-    , (poolLiquidityAssetId liq, Quantity liquidity)
+    [ (poolNftAssetId cfg, 1)
+    , (poolLiquidityAssetId cfg, Quantity liquidity)
     , (poolXAssetId cfg, Quantity reservesX)
     , (poolYAssetId cfg, Quantity reservesY)
     ]
@@ -173,7 +177,7 @@ valueForState liq nft cfg PoolState{reservesX, reservesY, liquidity} =
 txOutValue :: C.TxOut C.CtxTx C.BabbageEra -> C.Value
 txOutValue = fromMaybe mempty . preview (L._TxOut . _2 . L._TxOutValue)
 
-poolValue :: PoolOutput -> C.Value
+poolValue :: PoolOutput i -> C.Value
 poolValue = txOutValue . poTxOut
 
 poolXAssetId :: PoolConfig -> AssetId
@@ -182,27 +186,25 @@ poolXAssetId = either (error . ((<>) "poolXAssetId: unTransAssetId failed: " . s
 poolYAssetId :: PoolConfig -> AssetId
 poolYAssetId = either (error . ((<>) "poolYAssetId: unTransAssetId failed: " . show)) id . unTransAssetId . poolY
 
-poolNftAssetId :: PoolNFT -> AssetId
-poolNftAssetId = uncurry C.AssetId . pnftAsset
+poolNftAssetId :: PoolConfig -> AssetId
+poolNftAssetId = either (error . ((<>) "poolNftAssetId: unTransAssetId failed: " . show)) id . unTransAssetId . poolNft
 
-poolLiquidityAssetId :: PoolLiquidityToken -> AssetId
-poolLiquidityAssetId = uncurry C.AssetId . pltAsset
+poolLiquidityAssetId :: PoolConfig -> AssetId
+poolLiquidityAssetId = either (error . ((<>) "poolLiquidityAssetId: unTransAssetId failed: " . show)) id . unTransAssetId . poolLq
 
-data PoolOutput =
+data PoolOutput txi =
   PoolOutput
-    { poTxOut     :: (C.TxOut C.CtxTx C.BabbageEra)
-    , poConfig    :: PoolConfig
-    , poState     :: PoolState
-    , poNFT       :: PoolNFT
-    , poLiquidity :: PoolLiquidityToken
+    { poTxOut  :: (C.TxOut C.CtxTx C.BabbageEra)
+    , poConfig :: PoolConfig
+    , poTxIn   :: txi
     }
-    deriving stock (Eq, Show, Generic)
+    deriving stock (Eq, Show, Generic, Functor)
     deriving anyclass (ToJSON, FromJSON)
 
 poolConfig :: AssetClass -> AssetClass -> Integer -> PoolLiquidityToken -> PoolNFT -> PoolConfig
-poolConfig poolX poolY poolFeeNum  PoolLiquidityToken{pltAsset} poolNFT =
+poolConfig poolX poolY poolFeeNum  PoolLiquidityToken{pltAsset} PoolNFT{pnftAsset} =
   PoolConfig
-    { poolNft = transAssetId $ poolNftAssetId poolNFT
+    { poolNft = transAssetId $ uncurry C.AssetId pnftAsset
     , poolX
     , poolY
     , poolLq = transAssetId $ uncurry C.AssetId pltAsset
@@ -267,7 +269,7 @@ depositValue PoolConfig{poolX, poolY} quantity = do
 {-| The tx output for a token deposit
 -}
 depositTxOut :: Scripts -> C.NetworkId -> DepositConfig -> Value -> C.TxOut C.CtxTx C.BabbageEra
-depositTxOut Scripts{sDepositValidator} networkId cfg value =
-  let addr = C.makeShelleyAddressInEra networkId (C.PaymentCredentialByScript (fst sDepositValidator)) C.NoStakeAddress
+depositTxOut Scripts{sDepositValidator} n cfg value =
+  let addr = C.makeShelleyAddressInEra n (C.PaymentCredentialByScript (fst sDepositValidator)) C.NoStakeAddress
       dat = C.TxOutDatumInline C.ReferenceTxInsScriptsInlineDatumsInBabbageEra (toHashableScriptData cfg)
   in (C.TxOut addr (C.TxOutValue C.MultiAssetInBabbageEra value) dat C.ReferenceScriptNone)
