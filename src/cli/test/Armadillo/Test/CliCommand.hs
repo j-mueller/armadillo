@@ -27,53 +27,45 @@ module Armadillo.Test.CliCommand(
   apiPools
 ) where
 
-import           Armadillo.Api                        (Pair, PairID,
-                                                       Transaction)
-import qualified Armadillo.Api                        as Api
-import           Armadillo.BuildTx                    (ReferenceScripts (..))
-import           Armadillo.ChainFollower.DepositState (DepositOutput)
-import           Armadillo.ChainFollower.PoolState    (PoolOutput)
-import           Armadillo.Cli.Command                (ApiClientOptions (..),
-                                                       Command (..),
-                                                       DebugCommand (..),
-                                                       Fee (..),
-                                                       NodeClientConfig (..),
-                                                       NodeClientStateFile (..),
-                                                       PoolCommand (..),
-                                                       RefScriptCommand (..),
-                                                       ServerConfig (..),
-                                                       WalletClientOptions (..),
-                                                       unReadAssetId)
-import           Cardano.Api                          (ChainPoint,
-                                                       Quantity (..), TxIn)
-import           Control.Concurrent                   (threadDelay)
-import           Control.Monad                        (void)
-import           Control.Tracer                       (Tracer, traceWith)
-import           Convex.Devnet.CardanoNode            (RunningNode (..))
-import           Convex.Devnet.Utils                  (failure, withLogFile)
-import           Convex.Wallet.Operator               (OperatorConfigSigning (..))
-import           Data.Aeson                           (FromJSON, ToJSON, decode)
-import qualified Data.ByteString.Lazy                 as BSL
-import           Data.Text                            (Text)
-import qualified Data.Text                            as Text
-import           GHC.Generics                         (Generic)
-import           GHC.IO.Exception                     (ExitCode (ExitSuccess))
-import           GHC.IO.Handle.Types                  (Handle)
-import           Network.HTTP.Client                  (defaultManagerSettings,
-                                                       newManager)
-import           Servant.Client                       (ClientEnv, ClientError,
-                                                       mkClientEnv)
-import           Servant.Client.Core.BaseUrl          (BaseUrl (..),
-                                                       Scheme (..))
-import           System.FilePath                      ((</>))
-import           System.IO                            (BufferMode (NoBuffering),
-                                                       hSetBuffering)
-import           System.IO.Temp                       (emptyTempFile)
-import           System.Process                       (CreateProcess (..),
-                                                       ProcessHandle,
-                                                       StdStream (UseHandle),
-                                                       proc, waitForProcess,
-                                                       withCreateProcess)
+import           Armadillo.Api               (Pair, PairID, Transaction)
+import qualified Armadillo.Api               as Api
+import           Armadillo.BuildTx           (DepositOutput, PoolOutput,
+                                              ReferenceScripts (..))
+import           Armadillo.Cli.Command       (ApiClientOptions (..),
+                                              Command (..), DebugCommand (..),
+                                              Fee (..), NodeClientConfig (..),
+                                              NodeClientStateFile (..),
+                                              PoolCommand (..),
+                                              RefScriptCommand (..),
+                                              ServerConfig (..),
+                                              WalletClientOptions (..),
+                                              unReadAssetId)
+import           Cardano.Api                 (ChainPoint, Quantity (..), TxIn)
+import           Control.Concurrent          (threadDelay)
+import           Control.Monad               (void)
+import           Control.Tracer              (Tracer, traceWith)
+import           Convex.Devnet.CardanoNode   (RunningNode (..))
+import           Convex.Devnet.Utils         (failure, withLogFile)
+import           Convex.Wallet.Operator      (OperatorConfigSigning (..))
+import           Data.Aeson                  (FromJSON, ToJSON, decode)
+import qualified Data.ByteString.Lazy        as BSL
+import           Data.Text                   (Text)
+import qualified Data.Text                   as Text
+import           GHC.Generics                (Generic)
+import           GHC.IO.Exception            (ExitCode (ExitSuccess))
+import           GHC.IO.Handle.Types         (Handle)
+import           Network.HTTP.Client         (defaultManagerSettings,
+                                              newManager)
+import           Servant.Client              (ClientEnv, ClientError,
+                                              mkClientEnv)
+import           Servant.Client.Core.BaseUrl (BaseUrl (..), Scheme (..))
+import           System.FilePath             ((</>))
+import           System.IO                   (BufferMode (NoBuffering),
+                                              hSetBuffering)
+import           System.IO.Temp              (emptyTempFile)
+import           System.Process              (CreateProcess (..), ProcessHandle,
+                                              StdStream (UseHandle), proc,
+                                              waitForProcess, withCreateProcess)
 
 data RunningCliProcess =
   RunningCliProcess
@@ -291,7 +283,7 @@ apiPairs = runApiCall Api.getPairs
 apiTransactions :: RunningHttpServer -> PairID -> IO [Transaction]
 apiTransactions server pair = runApiCall (\k -> Api.getTransactions k Nothing pair) server
 
-apiDeposits :: RunningHttpServer -> IO [DepositOutput]
+apiDeposits :: RunningHttpServer -> IO [DepositOutput TxIn]
 apiDeposits = runApiCall Api.getDepositOutputs
 
 apiPools :: RunningHttpServer -> IO [PoolOutput TxIn]

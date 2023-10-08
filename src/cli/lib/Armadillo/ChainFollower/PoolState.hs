@@ -2,11 +2,11 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE ViewPatterns    #-}
 module Armadillo.ChainFollower.PoolState(
-  PoolState(..),
+  PoolUtxoState(..),
   utxos,
   updatePoolState,
 
-  PoolOutput(..),
+  PoolUtxoState(..),
   poolOutputFromTxOut,
 
   poolEvents
@@ -27,25 +27,25 @@ import qualified Convex.Utxos        as Utxos
 import           Data.Aeson          (FromJSON, ToJSON)
 import           GHC.Generics        (Generic)
 
-data PoolState =
-  PoolState
+data PoolUtxoState =
+  PoolUtxoState
     { _utxos :: UtxoSet CtxTx (PoolOutput TxIn)
     }
     deriving stock (Eq, Show, Generic)
     deriving anyclass (ToJSON, FromJSON)
 
-instance Semigroup PoolState where
+instance Semigroup PoolUtxoState where
   l <> r =
-    PoolState
+    PoolUtxoState
       { _utxos = _utxos l <> _utxos r
       }
 
-instance Monoid PoolState where
-  mempty = PoolState mempty
+instance Monoid PoolUtxoState where
+  mempty = PoolUtxoState mempty
 
 makeLensesFor
   [ ("_utxos", "utxos")
-  ] ''PoolState
+  ] ''PoolUtxoState
 
 {-| Extract a @PoolOutput@ from a tx output
 -}
@@ -64,8 +64,8 @@ poolEvents credentials oldUtxo block =
   let C.BlockInMode (C.Block (C.BlockHeader slotNo _ _) _) _ = block
   in Utxos.extract (poolOutputFromTxOut credentials slotNo) Nothing oldUtxo block
 
-updatePoolState :: ScriptHash -> BlockInMode CardanoMode -> PoolState -> (PoolState, [UtxoChangeEvent (PoolOutput TxIn)])
-updatePoolState sh block state@PoolState{_utxos} =
+updatePoolState :: ScriptHash -> BlockInMode CardanoMode -> PoolUtxoState -> (PoolUtxoState, [UtxoChangeEvent (PoolOutput TxIn)])
+updatePoolState sh block state@PoolUtxoState{_utxos} =
   let newPoolEvents = poolEvents sh _utxos block
       newPoolState  = Utxos.apply _utxos (foldMap Utxos.fromEvent newPoolEvents)
   in (state{_utxos = newPoolState}, newPoolEvents)

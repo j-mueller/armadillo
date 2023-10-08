@@ -6,38 +6,34 @@ module Armadillo.Test.Integration(
   runDevEnv
 ) where
 
-import qualified Armadillo.Api                     as Api
-import           Armadillo.ChainFollower.PoolState (PoolOutput (..))
-import           Armadillo.Cli.Command             (Command (..), Fee (..),
-                                                    RefScriptCommand (..),
-                                                    ServerConfig (..))
-import qualified Armadillo.Server.Mock             as Mock
-import           Armadillo.Test.CliCommand         (ChainFollowerStartup (..),
-                                                    apiHealth, apiPairs,
-                                                    apiPools, apiTransactions,
-                                                    mkNodeClientConfig,
-                                                    runCliCommand,
-                                                    withHttpServer)
-import           Armadillo.Test.DevEnv             (DevEnv (..), TestLog (..),
-                                                    createCurrency, createPool,
-                                                    makeDeposit, withDevEnv)
-import           Armadillo.Test.Utils              (availableTokens,
-                                                    checkRefScripts)
-import qualified Cardano.Api                       as C
-import           Control.Concurrent                (threadDelay)
-import           Convex.Devnet.CardanoNode         (getCardanoNodeVersion,
-                                                    withCardanoNodeDevnet)
-import           Convex.Devnet.Logging             (contramap,
-                                                    showLogsOnFailure)
-import           Convex.Devnet.Utils               (withTempDir)
-import           Convex.Devnet.WalletServer        (RunningWalletServer (..),
-                                                    getUTxOs, withWallet)
-import           Data.List                         (isInfixOf)
-import           System.FilePath                   ((</>))
-import           Test.Tasty                        (DependencyType (..),
-                                                    TestTree, after, testGroup)
-import           Test.Tasty.HUnit                  (assertBool, assertEqual,
-                                                    testCase)
+import qualified Armadillo.Api              as Api
+import           Armadillo.BuildTx          (PoolOutput (..))
+import           Armadillo.Cli.Command      (Command (..), Fee (..),
+                                             RefScriptCommand (..),
+                                             ServerConfig (..))
+import qualified Armadillo.Server.Mock      as Mock
+import           Armadillo.Test.CliCommand  (ChainFollowerStartup (..),
+                                             apiHealth, apiPairs, apiPools,
+                                             apiTransactions,
+                                             mkNodeClientConfig, runCliCommand,
+                                             withHttpServer)
+import           Armadillo.Test.DevEnv      (DevEnv (..), TestLog (..),
+                                             createCurrency, createPool,
+                                             makeDeposit, withDevEnv)
+import           Armadillo.Test.Utils       (availableTokens, checkRefScripts)
+import qualified Cardano.Api                as C
+import           Control.Concurrent         (threadDelay)
+import           Convex.Devnet.CardanoNode  (getCardanoNodeVersion,
+                                             withCardanoNodeDevnet)
+import           Convex.Devnet.Logging      (contramap, showLogsOnFailure)
+import           Convex.Devnet.Utils        (withTempDir)
+import           Convex.Devnet.WalletServer (RunningWalletServer (..), getUTxOs,
+                                             withWallet)
+import           Data.List                  (isInfixOf)
+import           System.FilePath            ((</>))
+import           Test.Tasty                 (DependencyType (..), TestTree,
+                                             after, testGroup)
+import           Test.Tasty.HUnit           (assertBool, assertEqual, testCase)
 
 tests :: TestTree
 tests = testGroup "integration"

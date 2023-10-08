@@ -15,7 +15,7 @@ module Armadillo.ChainFollower.State(
 ) where
 
 import           Armadillo.ChainFollower.DepositState (DepositState)
-import           Armadillo.ChainFollower.PoolState    (PoolState)
+import           Armadillo.ChainFollower.PoolState    (PoolUtxoState)
 import qualified Armadillo.Utils                      as Utils
 import           Cardano.Api                          (ChainPoint,
                                                        chainTipToChainPoint)
@@ -30,7 +30,7 @@ data ChainFollowerState =
   ChainFollowerState
     { cfsSyncState    :: !(Maybe CatchingUp)
     , cfsFirstBlock   :: !(Maybe JSONChainPoint)
-    , cfsPoolState    :: !PoolState
+    , cfsPoolState    :: !PoolUtxoState
     , cfsDepositState :: !DepositState
     } deriving stock (Eq, Show, Generic)
       deriving anyclass (ToJSON, FromJSON)

@@ -7,45 +7,38 @@ module Armadillo.Cli(
   readJSONFile
   ) where
 
-import qualified Armadillo.Api                     as Api
-import           Armadillo.ChainFollower.PoolState (PoolOutput (..))
-import           Armadillo.Cli.Command             (Command (..),
-                                                    DebugCommand (..), Fee (..),
-                                                    PoolCommand (..),
-                                                    RefScriptCommand (..),
-                                                    ServerConfig (..),
-                                                    apiClientEnv,
-                                                    localNodeConnectInfo,
-                                                    parseCommand,
-                                                    walletClientEnv)
-import           Armadillo.Command                 (CreatePoolParams (..))
-import qualified Armadillo.Command                 as Command
-import qualified Armadillo.NodeClient              as NodeClient
-import           Armadillo.Scripts                 (loadScriptsConfig,
-                                                    scriptsFromScriptsConfig)
-import qualified Armadillo.Server                  as Server
-import           Armadillo.Utils                   (readJSONFile)
-import           Control.Monad.IO.Class            (MonadIO (..))
-import           Convex.MonadLog                   (runMonadLogKatip,
-                                                    withKatipLogging)
-import           Convex.Wallet.Operator            (loadOperatorFiles)
-import           Data.Aeson                        (ToJSON)
-import           Data.Aeson.Encode.Pretty          (encodePretty)
-import qualified Data.ByteString.Lazy              as BSL
-import qualified Data.ByteString.Lazy.Char8        as LBS
-import           Data.Foldable                     (traverse_)
-import           Data.String                       (IsString (..))
-import           ErgoDex.Contracts.Pool            (PoolConfig (..))
-import qualified Katip                             as K
-import           Network.HTTP.Client               (Manager,
-                                                    defaultManagerSettings,
-                                                    newManager)
-import           Options.Applicative               (customExecParser,
-                                                    disambiguate, helper, idm,
-                                                    info, prefs,
-                                                    showHelpOnEmpty,
-                                                    showHelpOnError)
-import           System.Exit                       (exitFailure)
+import qualified Armadillo.Api              as Api
+import           Armadillo.BuildTx          (PoolOutput (..))
+import           Armadillo.Cli.Command      (Command (..), DebugCommand (..),
+                                             Fee (..), PoolCommand (..),
+                                             RefScriptCommand (..),
+                                             ServerConfig (..), apiClientEnv,
+                                             localNodeConnectInfo, parseCommand,
+                                             walletClientEnv)
+import           Armadillo.Command          (CreatePoolParams (..))
+import qualified Armadillo.Command          as Command
+import qualified Armadillo.NodeClient       as NodeClient
+import           Armadillo.Scripts          (loadScriptsConfig,
+                                             scriptsFromScriptsConfig)
+import qualified Armadillo.Server           as Server
+import           Armadillo.Utils            (readJSONFile)
+import           Control.Monad.IO.Class     (MonadIO (..))
+import           Convex.MonadLog            (runMonadLogKatip, withKatipLogging)
+import           Convex.Wallet.Operator     (loadOperatorFiles)
+import           Data.Aeson                 (ToJSON)
+import           Data.Aeson.Encode.Pretty   (encodePretty)
+import qualified Data.ByteString.Lazy       as BSL
+import qualified Data.ByteString.Lazy.Char8 as LBS
+import           Data.Foldable              (traverse_)
+import           Data.String                (IsString (..))
+import           ErgoDex.Contracts.Pool     (PoolConfig (..))
+import qualified Katip                      as K
+import           Network.HTTP.Client        (Manager, defaultManagerSettings,
+                                             newManager)
+import           Options.Applicative        (customExecParser, disambiguate,
+                                             helper, idm, info, prefs,
+                                             showHelpOnEmpty, showHelpOnError)
+import           System.Exit                (exitFailure)
 
 runCli :: IO ()
 runCli = do

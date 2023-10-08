@@ -63,8 +63,10 @@ import           ErgoDex.CardanoApi              (poolLqMintingScript,
                                                   poolNftMintingScript)
 import           ErgoDex.Contracts.Pool          (PoolConfig (..),
                                                   PoolState (..))
+import qualified ErgoDex.Contracts.Pool          as Pool
 import           ErgoDex.Contracts.Proxy.Deposit (DepositConfig)
 import qualified ErgoDex.Contracts.Proxy.Deposit as D
+import qualified ErgoDex.Contracts.Proxy.Order   as Order
 import           GHC.Generics                    (Generic)
 import           PlutusLedgerApi.V1.Value        (AssetClass)
 
@@ -272,3 +274,44 @@ depositTxOut Scripts{sDepositValidator} n cfg value =
   let addr = C.makeShelleyAddressInEra n (C.PaymentCredentialByScript (fst sDepositValidator)) C.NoStakeAddress
       dat = C.TxOutDatumInline C.ReferenceTxInsScriptsInlineDatumsInBabbageEra (toHashableScriptData cfg)
   in (C.TxOut addr (C.TxOutValue C.MultiAssetInBabbageEra value) dat C.ReferenceScriptNone)
+
+applyDeposit :: (MonadBuildTx m, MonadBlockchain m) => Scripts -> DepositOutput TxIn -> PoolOutput TxIn -> m (PoolOutput ())
+applyDeposit Scripts{sPoolValidator, sDepositValidator} DepositOutput{doCfg, doTxOut} poolOutput@PoolOutput{poConfig} = do
+  (n, p) <- (,) <$> networkId <*> queryProtocolParameters
+  let depositRed = Order.OrderRedeemer{Order.poolInIx = 0, Order.orderInIx = 1, Order.rewardOutIx = 1, Order.action = Order.Apply}
+      poolRed    = Pool.PoolRedeemer{Pool.action = Pool.Deposit, Pool.selfIx = 0}
+
+      minRewardByX = minAssetReward (txOutValue doTxOut) (poolXAssetId poConfig) (assetXReserves poolOutput) (poolLiquidity poolOutput) doCfg
+      minRewardByY = minAssetReward (txOutValue doTxOut) (poolYAssetId poConfig) (assetYReserves poolOutput) (poolLiquidity poolOutput) doCfg
+
+      minReward = min minRewardByX minRewardByY
+
+      oldState = poolState poolOutput
+      newState =
+        let Quantity q = minReward
+        in oldState{liquidity = liquidity oldState - q}
+  undefined
+
+minAssetReward :: Value -> AssetId -> Quantity -> Quantity -> DepositConfig -> Quantity
+minAssetReward selfValue asset (Quantity assetReserves) (Quantity liquidity) D.DepositConfig{D.exFee, D.collateralAda} =
+  let assetInput = C.selectAsset selfValue asset
+      Quantity depositInput = if asset == C.AdaAssetId then assetInput - Quantity exFee - Quantity collateralAda else assetInput
+  in Quantity $ ((depositInput * liquidity) `div` assetReserves)
+
+assetXReserves :: PoolOutput i -> Quantity
+assetXReserves po@PoolOutput{poConfig} = C.selectAsset (poolValue po) (poolXAssetId poConfig)
+
+assetYReserves :: PoolOutput i -> Quantity
+assetYReserves po@PoolOutput{poConfig} = C.selectAsset (poolValue po) (poolYAssetId poConfig)
+
+{-| The amount of liquidity tokens in the pool
+-}
+poolLiquidity :: PoolOutput i -> Quantity
+poolLiquidity po@PoolOutput{poConfig} = C.selectAsset (poolValue po) (poolLiquidityAssetId poConfig)
+
+poolState :: PoolOutput i -> PoolState
+poolState po =
+  let Quantity liquidity = poolLiquidity po
+      Quantity reservesX = assetXReserves po
+      Quantity reservesY = assetYReserves po
+  in PoolState{reservesX, reservesY, liquidity}

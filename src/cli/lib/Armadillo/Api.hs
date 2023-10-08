@@ -51,28 +51,25 @@ module Armadillo.Api(
 
 ) where
 
-import           Armadillo.ChainFollower.DepositState (DepositOutput)
-import           Armadillo.ChainFollower.PoolState    (PoolOutput)
-import           Cardano.Api                          (TxIn)
-import           Data.Aeson                           (FromJSON, FromJSONKey,
-                                                       ToJSON, ToJSONKey)
-import qualified Data.ByteString.Lazy                 as BSL
-import           Data.OpenApi                         (ToParamSchema, ToSchema)
-import           Data.OpenApi.Internal                (OpenApi)
-import           Data.OpenApi.Internal.Utils          (encodePretty)
-import           Data.Proxy                           (Proxy (..))
-import           Data.Text                            (Text)
-import           GHC.Generics                         (Generic)
-import           Servant.API                          (Capture, Description,
-                                                       FromHttpApiData, Get,
-                                                       JSON, NoContent, Post,
-                                                       QueryParam, ReqBody,
-                                                       ToHttpApiData, type (:>),
-                                                       (:<|>) (..))
-import           Servant.Client                       (ClientEnv, client,
-                                                       runClientM)
-import           Servant.Client.Core.ClientError      (ClientError)
-import           Servant.OpenApi                      (toOpenApi)
+import           Armadillo.BuildTx               (DepositOutput, PoolOutput)
+import           Cardano.Api                     (TxIn)
+import           Data.Aeson                      (FromJSON, FromJSONKey, ToJSON,
+                                                  ToJSONKey)
+import qualified Data.ByteString.Lazy            as BSL
+import           Data.OpenApi                    (ToParamSchema, ToSchema)
+import           Data.OpenApi.Internal           (OpenApi)
+import           Data.OpenApi.Internal.Utils     (encodePretty)
+import           Data.Proxy                      (Proxy (..))
+import           Data.Text                       (Text)
+import           GHC.Generics                    (Generic)
+import           Servant.API                     (Capture, Description,
+                                                  FromHttpApiData, Get, JSON,
+                                                  NoContent, Post, QueryParam,
+                                                  ReqBody, ToHttpApiData,
+                                                  type (:>), (:<|>) (..))
+import           Servant.Client                  (ClientEnv, client, runClientM)
+import           Servant.Client.Core.ClientError (ClientError)
+import           Servant.OpenApi                 (toOpenApi)
 
 newtype AssetID = AssetID Text
   deriving stock (Eq, Ord, Show, Generic)
@@ -441,14 +438,14 @@ getTransactions clientEnv limit pair = do
 -- API for internal use (CLI)
 type InternalAPI =
   "pools" :> Get '[JSON] [PoolOutput TxIn]
-  :<|> "deposits" :> Get '[JSON] [DepositOutput]
+  :<|> "deposits" :> Get '[JSON] [DepositOutput TxIn]
 
 getPoolOutputs :: ClientEnv -> IO (Either ClientError [PoolOutput TxIn])
 getPoolOutputs =
   let pools :<|> _ = client (Proxy @("internal" :> InternalAPI))
   in runClientM pools
 
-getDepositOutputs :: ClientEnv -> IO (Either ClientError [DepositOutput])
+getDepositOutputs :: ClientEnv -> IO (Either ClientError [DepositOutput TxIn])
 getDepositOutputs =
   let _pools :<|> deposits = client (Proxy @("internal" :> InternalAPI))
   in runClientM deposits

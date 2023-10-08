@@ -11,10 +11,10 @@ module Armadillo.Server.Real(
 import           Armadillo.Api                        (AssetID (..),
                                                        HistoricAPI, InternalAPI,
                                                        Pair (..), mkPair)
-import           Armadillo.ChainFollower.DepositState (DepositOutput (..),
-                                                       DepositState (..))
-import           Armadillo.ChainFollower.PoolState    (PoolOutput (..),
-                                                       PoolState (..))
+import           Armadillo.BuildTx                    (DepositOutput (..),
+                                                       PoolOutput (..))
+import           Armadillo.ChainFollower.DepositState (DepositState (..))
+import           Armadillo.ChainFollower.PoolState    (PoolUtxoState (..))
 import           Armadillo.ChainFollower.State        (ChainFollowerState (..))
 import qualified Armadillo.Server.Mock                as M
 import qualified Cardano.Api                          as C
@@ -49,7 +49,7 @@ data ConversionError =
 
 getPairs :: MonadIO m => TVar ChainFollowerState -> m [Pair]
 getPairs tv = do
-  ChainFollowerState{cfsPoolState=PoolState{_utxos=Convex.Utxos.UtxoSet{Convex.Utxos._utxos}}} <- liftIO (atomically (readTVar tv))
+  ChainFollowerState{cfsPoolState=PoolUtxoState{_utxos=Convex.Utxos.UtxoSet{Convex.Utxos._utxos}}} <- liftIO (atomically (readTVar tv))
   catMaybes <$> traverse (getPair . poConfig . snd . snd) (Map.toList _utxos)
 
 getPair :: MonadIO m => PoolConfig -> m (Maybe Pair)
@@ -80,10 +80,10 @@ internalAPI tv =
 
 getPools :: MonadIO m => TVar ChainFollowerState -> m [PoolOutput C.TxIn]
 getPools tv = do
-  ChainFollowerState{cfsPoolState=PoolState{_utxos=(Convex.Utxos.UtxoSet u)}} <- liftIO (atomically (readTVar tv))
+  ChainFollowerState{cfsPoolState=PoolUtxoState{_utxos=(Convex.Utxos.UtxoSet u)}} <- liftIO (atomically (readTVar tv))
   pure $ fmap snd $ toList u
 
-getDeposits :: MonadIO m => TVar ChainFollowerState -> m [DepositOutput]
+getDeposits :: MonadIO m => TVar ChainFollowerState -> m [DepositOutput C.TxIn]
 getDeposits tv = do
   ChainFollowerState{cfsDepositState=DepositState{_depositUtxos=(Convex.Utxos.UtxoSet u)}} <- liftIO (atomically (readTVar tv))
   pure $ fmap snd $ toList u
