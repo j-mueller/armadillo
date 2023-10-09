@@ -25,7 +25,7 @@ with-compiler: ghc-9.2.8
 source-repository-package
   type: git
   location: https://github.com/j-mueller/sc-tools.git
-  tag: 635c7cdff512109dcba0a329d0a1cc8459935c62
+  tag: 89ad34b8e1139fc733ea93044ff3b2a603628f21
   subdir:
     src/devnet
     src/coin-selection

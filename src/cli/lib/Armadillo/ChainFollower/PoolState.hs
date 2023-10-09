@@ -5,8 +5,6 @@ module Armadillo.ChainFollower.PoolState(
   PoolUtxoState(..),
   utxos,
   updatePoolState,
-
-  PoolUtxoState(..),
   poolOutputFromTxOut,
 
   poolEvents

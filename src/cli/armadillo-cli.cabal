@@ -150,9 +150,10 @@ test-suite armadillo-cli-test
     , aeson
     , armadillo-cli
     , async
-    , base                   >=4.14.3.0
+    , base                           >=4.14.3.0
     , bytestring
     , cardano-api
+    , cardano-dex-contracts-onchain
     , containers
     , contra-tracer
     , convex-base
@@ -205,9 +206,10 @@ executable armadillo-cli-dev
     , aeson
     , armadillo-cli
     , async
-    , base                 >=4.14.3.0
+    , base                           >=4.14.3.0
     , bytestring
     , cardano-api
+    , cardano-dex-contracts-onchain
     , containers
     , contra-tracer
     , convex-base

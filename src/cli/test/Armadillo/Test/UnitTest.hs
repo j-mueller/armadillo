@@ -10,24 +10,27 @@ import           Armadillo.BuildTx              (DepositOutput (..),
                                                  PoolNFT (..), PoolOutput (..))
 import qualified Armadillo.BuildTx              as BuildTx
 import           Armadillo.Command              (CreatePoolParams (..),
-                                                 createPool, makeDeposit)
-import           Armadillo.Scripts              (Scripts, loadScriptsConfig,
-                                                 scriptsFromScriptsConfig)
+                                                 applyDeposit, createPool,
+                                                 deployRefScripts, makeDeposit)
 import qualified Armadillo.Test.Scripts         as Scripts
+import           Armadillo.Test.Utils           (checkRefScriptsUTxO,
+                                                 loadScripts)
 import           Cardano.Api                    (AssetName, PolicyId, TxIn,
                                                  Value)
 import qualified Cardano.Api                    as C
 import           Control.Lens                   (view)
 import qualified Control.Lens                   as L
+import           Control.Monad                  (void)
 import           Control.Monad.Except           (ExceptT, runExceptT)
 import           Control.Monad.IO.Class         (MonadIO (..))
 import           Convex.BuildTx                 (execBuildTx', payToAddress,
                                                  runBuildTxT,
                                                  setMinAdaDepositAll)
 import           Convex.Class                   (MonadBlockchain (..),
-                                                 MonadMockchain)
+                                                 MonadMockchain, getUtxo)
 import           Convex.Lenses                  (emptyTx)
 import qualified Convex.Lenses                  as L
+import           Convex.MockChain               (fromLedgerUTxO)
 import           Convex.MockChain.CoinSelection (balanceAndSubmit)
 import qualified Convex.MockChain.Defaults      as Defaults
 import           Convex.MockChain.Utils         (mockchainSucceeds)
@@ -54,6 +57,8 @@ tests = testGroup "emulator"
   , testCase "create LQ pool liquidity" (mockchainSucceeds createLQPoolLiquidity)
   , testCase "create LQ pool" (mockchainSucceeds createLQPool)
   , testCase "make a deposit" (mockchainSucceeds (createLQPool >>= depositLQ))
+  , testCase "deploy ref scripts" (mockchainSucceeds deployRefScriptsTest)
+  , testCase "apply a deposit" (mockchainSucceeds applyDepositTest)
   ]
 
 createLQPoolNft :: (MonadIO m, MonadMockchain m, MonadUtxoQuery m, MonadFail m) => m (C.Tx C.BabbageEra, (PolicyId, AssetName))
@@ -103,6 +108,24 @@ depositLQ PoolOutput{poConfig} = failOnError $ do
   scripts <- loadScripts
   makeDeposit scripts testOperator poConfig 10
 
+deployRefScriptsTest :: (MonadMockchain m, MonadUtxoQuery m, MonadFail m, MonadIO m) => m ()
+deployRefScriptsTest = do
+  _ <- payToOperator Wallet.w2 testOperator
+  scripts <- loadScripts
+  refScripts <- failOnError (deployRefScripts scripts testOperator)
+  utxo <- getUtxo
+  liftIO (checkRefScriptsUTxO refScripts (fromLedgerUTxO C.ShelleyBasedEraBabbage utxo) scripts)
+
+applyDepositTest :: (MonadMockchain m, MonadUtxoQuery m, MonadFail m, MonadIO m) => m ()
+applyDepositTest = do
+  _ <- payToOperator Wallet.w2 testOperator
+  _ <- payToOperator Wallet.w2 testOperator
+  scripts <- loadScripts
+  pool <- createLQPool
+  deposit <- depositLQ pool
+  refScripts <- failOnError (deployRefScripts scripts testOperator)
+  void (failOnError (applyDeposit refScripts scripts testOperator deposit pool))
+
 {-| Pay 100 Ada from one wallet to another
 -}
 payToOperator :: (MonadMockchain m, MonadFail m) => Wallet -> Operator k -> m (C.Tx C.BabbageEra)
@@ -140,6 +163,3 @@ signingKeyFromCbor cbor = do
 
 failOnError :: (Show e, MonadFail m) => ExceptT e m a -> m a
 failOnError x = runExceptT x >>= either (fail . show) pure
-
-loadScripts :: (MonadFail m, MonadIO m) => m Scripts
-loadScripts = liftIO loadScriptsConfig >>= liftIO . scriptsFromScriptsConfig >>= either (fail . (<>) "Failed to load scripts: " . show) pure

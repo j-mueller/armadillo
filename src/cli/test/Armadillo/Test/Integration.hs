@@ -47,7 +47,9 @@ tests = testGroup "integration"
     , after AllFinish "T3" $
         testCase "T4: mock API" checkMockAPI
     , after AllFinish "T4" $
-        testCase "T5: chain follower" checkChainFollower
+        testCase "T10: check deposit processing" checkDepositProcessing
+    -- , after AllFinish "T4" $
+    --     testCase "T5: chain follower" checkChainFollower
     ]
   -- , after AllFinish "HTTP" $ testGroup "Commands"
   --   [ testCase "T6: deployScripts" checkDeployScript

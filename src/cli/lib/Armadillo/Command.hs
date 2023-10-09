@@ -1,5 +1,6 @@
-{-# LANGUAGE DeriveAnyClass #-}
-{-# LANGUAGE TupleSections  #-}
+{-# LANGUAGE DeriveAnyClass   #-}
+{-# LANGUAGE TupleSections    #-}
+{-# LANGUAGE TypeApplications #-}
 {-| Running blockchain actions
 -}
 module Armadillo.Command(
@@ -12,13 +13,16 @@ module Armadillo.Command(
   initialState,
   createPool,
   createToken,
-  makeDeposit
+  makeDeposit,
+  applyDeposit
 ) where
 
 import           Armadillo.BuildTx                  (DEXBuildTxError,
                                                      DepositOutput (..),
                                                      PoolOutput (..),
-                                                     ReferenceScripts)
+                                                     PoolState (..),
+                                                     ReferenceScripts,
+                                                     initialLiquidity)
 import qualified Armadillo.BuildTx                  as BuildTx
 import           Armadillo.Scripts                  (Scripts)
 import           Cardano.Api                        (AssetId, AssetName,
@@ -51,8 +55,7 @@ import           Convex.Wallet.Operator             (Operator (oPaymentKey),
                                                      Signing, verificationKey)
 import           Data.Functor                       (($>))
 import           ErgoDex.CardanoApi                 (CardanoApiScriptError)
-import           ErgoDex.Contracts.Pool             (PoolConfig, PoolState (..),
-                                                     maxLqCap)
+import           ErgoDex.Contracts.Pool             (PoolConfig, maxLqCap)
 import           GHC.Generics                       (Generic)
 import           Servant.Client                     (ClientEnv)
 
@@ -103,11 +106,11 @@ data CreatePoolParams =
     deriving stock (Eq, Show, Generic)
 
 initialState :: CreatePoolParams -> PoolState
-initialState CreatePoolParams{cppAssetClassX=(_, Quantity reservesX), cppAssetClassY=(_, Quantity reservesY)} =
+initialState CreatePoolParams{cppAssetClassX=(_, Quantity resX), cppAssetClassY=(_, Quantity resY)} =
   PoolState
-    { reservesX
-    , reservesY
-    , liquidity = maxLqCap
+    { reservesX = Quantity resX
+    , reservesY = Quantity resY
+    , liquidity = initialLiquidity (Quantity $ ceiling @Double $ sqrt $ fromIntegral $ resX * resY)
     }
 
 {-| Create a new LP pool
@@ -140,3 +143,9 @@ makeDeposit scripts operator poolCfg quantity = do
   (out, btx) <- runBuildTxT $ mapError BuildTxError $ BuildTx.deposit scripts pkh Nothing poolCfg quantity
   tx <- mapError BalanceSubmitFailed (balanceAndSubmitOperator operator Nothing (btx emptyTx))
   pure $ out $> fst (head (txnUtxos tx))
+
+applyDeposit :: (MonadUtxoQuery m, MonadBlockchain m, MonadError TxCommandError m) => ReferenceScripts TxIn -> Scripts -> Operator Signing -> DepositOutput TxIn -> PoolOutput TxIn -> m (PoolOutput TxIn)
+applyDeposit refScripts scripts operator deposit pool = do
+  ((poolOut, rewardOut), btx) <- runBuildTxT $ mapError BuildTxError $ BuildTx.applyDeposit refScripts scripts operator deposit pool
+  tx <- mapError BalanceSubmitFailed (balanceAndSubmitOperator operator (Just rewardOut) (btx emptyTx))
+  pure $ poolOut $> fst (head (txnUtxos tx))
