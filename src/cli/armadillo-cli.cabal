@@ -65,6 +65,10 @@ library
   exposed-modules:
     Armadillo.Api
     Armadillo.BuildTx
+    Armadillo.BuildTx.Deposit
+    Armadillo.BuildTx.Pool
+    Armadillo.BuildTx.Redeem
+    Armadillo.BuildTx.Types
     Armadillo.ChainFollower.DepositState
     Armadillo.ChainFollower.PoolState
     Armadillo.ChainFollower.State
