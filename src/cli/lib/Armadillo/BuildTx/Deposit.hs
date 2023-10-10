@@ -82,7 +82,7 @@ depositValue PoolConfig{poolX, poolY} quantity = do
   -- We need to include enough Ada to run the deposit & pool validators
   -- because the deposit validator only allows 2 inputs (so we can't have)
   -- a 3rd Ada-only input)
-  let minAda = C.Lovelace 20_000_000
+  let minAda = C.Lovelace 10_000_000
   pure $ C.valueFromList [(aX, quantity), (aY, quantity)] <> C.lovelaceToValue minAda
 
 {-| The tx output for a token deposit

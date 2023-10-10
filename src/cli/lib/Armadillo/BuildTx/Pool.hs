@@ -14,6 +14,7 @@ module Armadillo.BuildTx.Pool(
   createPoolLiquidityToken,
   createPoolNft,
   rewardLp,
+  sharesAmount,
   poolState,
   addPoolOutput,
   poolLiquidityAssetId,
@@ -192,6 +193,17 @@ rewardLp PoolState{reservesX=Quantity resX, reservesY=Quantity resY, liquidity} 
             then (0, (minByY - minByX) * resY `div` lq)
             else ((minByX - minByY) * resX `div` lq, 0)
   in RewardsAndChange{ changeX, changeY, rewards = Quantity (min minByY minByX)}
+
+{-| The number of tokens returned to the user in exchange for the given number
+of liquidity tokens
+-}
+sharesAmount :: PoolState -> Quantity -> RewardsAndChange
+sharesAmount PoolState{reservesX, reservesY, liquidity=PoolLiquidity{plLiquidity}} burnedLq =
+  RewardsAndChange
+    { rewards = negate burnedLq
+    , changeX = burnedLq * reservesX `div` plLiquidity
+    , changeY = burnedLq * reservesY `div` plLiquidity
+    }
 
 assetXReserves :: PoolOutput i -> Quantity
 assetXReserves po@PoolOutput{poConfig} = C.selectAsset (poolValue po) (poolXAssetId poConfig)

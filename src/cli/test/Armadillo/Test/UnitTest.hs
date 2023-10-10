@@ -10,8 +10,9 @@ import           Armadillo.BuildTx              (DepositOutput (..),
                                                  PoolNFT (..), PoolOutput (..))
 import qualified Armadillo.BuildTx              as BuildTx
 import           Armadillo.Command              (CreatePoolParams (..),
-                                                 applyDeposit, createPool,
-                                                 deployRefScripts, makeDeposit)
+                                                 applyDeposit, applyRedemption,
+                                                 createPool, deployRefScripts,
+                                                 makeDeposit, makeRedemption)
 import qualified Armadillo.Test.Scripts         as Scripts
 import           Armadillo.Test.Utils           (checkRefScriptsUTxO,
                                                  loadScripts)
@@ -59,6 +60,7 @@ tests = testGroup "emulator"
   , testCase "make a deposit" (mockchainSucceeds (createLQPool >>= depositLQ))
   , testCase "deploy ref scripts" (mockchainSucceeds deployRefScriptsTest)
   , testCase "apply a deposit" (mockchainSucceeds applyDepositTest)
+  , testCase "make a redemption" (mockchainSucceeds redeemTest)
   ]
 
 createLQPoolNft :: (MonadIO m, MonadMockchain m, MonadUtxoQuery m, MonadFail m) => m (C.Tx C.BabbageEra, (PolicyId, AssetName))
@@ -125,6 +127,18 @@ applyDepositTest = do
   deposit <- depositLQ pool
   refScripts <- failOnError (deployRefScripts scripts testOperator)
   void (failOnError (applyDeposit refScripts scripts testOperator deposit pool))
+
+redeemTest :: (MonadMockchain m, MonadUtxoQuery m, MonadFail m, MonadIO m) => m ()
+redeemTest = do
+  _ <- payToOperator Wallet.w2 testOperator
+  _ <- payToOperator Wallet.w2 testOperator
+  scripts <- loadScripts
+  pool <- createLQPool
+  deposit <- depositLQ pool
+  refScripts <- failOnError (deployRefScripts scripts testOperator)
+  newPool <- failOnError (applyDeposit refScripts scripts testOperator deposit pool)
+  redeemOut <- failOnError (makeRedemption scripts testOperator (poConfig newPool) 5)
+  void $ failOnError $ applyRedemption refScripts scripts testOperator redeemOut newPool
 
 {-| Pay 100 Ada from one wallet to another
 -}

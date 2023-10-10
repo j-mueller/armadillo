@@ -31,7 +31,6 @@ import qualified Data.ByteString.Lazy       as BSL
 import qualified Data.ByteString.Lazy.Char8 as LBS
 import           Data.Foldable              (traverse_)
 import           Data.String                (IsString (..))
-import           ErgoDex.Contracts.Pool     (PoolConfig (..))
 import qualified Katip                      as K
 import           Network.HTTP.Client        (Manager, defaultManagerSettings,
                                              newManager)
@@ -97,9 +96,9 @@ runCli = do
             m <- mgr
             let walletEnv = walletClientEnv m walletClient
                 apiEnv    = apiClientEnv m apiClientOptions
-                isMatchinPool PoolOutput{poConfig=PoolConfig{poolX, poolY}} = True
+                isMatchingPool _ = True -- FIXME
             pools <- Api.getPoolOutputs apiEnv >>= either (error . show . (<>) "getPoolOutputs failed: " . show) pure
-            case filter isMatchinPool pools of
+            case filter isMatchingPool pools of
               [] -> error $ "No pool found for " <> show (assetClassX, assetClassY)
               PoolOutput{poConfig}:_ -> do
                 result <- runMonadLogKatip config (Command.runBlockchainAction connectInfo nodeEnv walletEnv $ Command.makeDeposit scripts op poConfig quantity)

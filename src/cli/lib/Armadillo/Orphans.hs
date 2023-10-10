@@ -1,9 +1,10 @@
 {-# LANGUAGE DerivingVia       #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# OPTIONS_GHC -Wno-orphans #-}
+{-# OPTIONS_GHC -Wno-orphans -Wno-identities #-}
 {-# LANGUAGE DeriveAnyClass    #-}
 module Armadillo.Orphans() where
 
+import           Cardano.Api                     (Quantity (..))
 import qualified Codec.CBOR.Write                as Write
 import qualified Codec.Serialise                 as Serialise
 import           Codec.Serialise.Class           (Serialise)
@@ -22,6 +23,7 @@ import qualified Data.Text.Encoding              as TE
 import           ErgoDex.Contracts.Pool          (PoolConfig (..),
                                                   PoolState (..))
 import           ErgoDex.Contracts.Proxy.Deposit (DepositConfig (..))
+import           ErgoDex.Contracts.Proxy.Redeem  (RedeemConfig (..))
 import           GHC.Generics                    (Generic)
 import           PlutusCore.Data                 (Data)
 import           PlutusLedgerApi.V1.Address      (Address)
@@ -38,8 +40,13 @@ import qualified PlutusTx.Prelude                as PlutusTx
 import           Servant.API                     (FromHttpApiData (..))
 import           Text.Read                       (readMaybe)
 
+deriving newtype instance Enum Quantity
+deriving newtype instance Real Quantity
+deriving newtype instance Integral Quantity
+
 deriving stock instance Eq PoolState
 deriving stock instance Eq DepositConfig
+deriving stock instance Eq RedeemConfig
 deriving stock instance Generic PoolState
 
 deriving stock instance Generic PoolConfig
@@ -48,11 +55,13 @@ deriving anyclass instance ToJSON PoolState
 deriving anyclass instance ToJSON PoolConfig
 deriving newtype instance ToJSON AssetClass
 deriving anyclass instance ToJSON DepositConfig
+deriving anyclass instance ToJSON RedeemConfig
 
 deriving anyclass instance FromJSON PoolState
 deriving anyclass instance FromJSON PoolConfig
 deriving newtype instance FromJSON AssetClass
 deriving anyclass instance FromJSON DepositConfig
+deriving anyclass instance FromJSON RedeemConfig
 
 deriving anyclass instance (ToJSON k, ToJSON v) => ToJSON (AssocMap.Map k v)
 deriving anyclass instance (FromJSON k, FromJSON v) => FromJSON (AssocMap.Map k v)
@@ -150,4 +159,3 @@ instance FromHttpApiData TxOutRef where
 
 txOutRefSep :: Text
 txOutRefSep = ":"
-

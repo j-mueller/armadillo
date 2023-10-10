@@ -14,13 +14,16 @@ module Armadillo.Command(
   createPool,
   createToken,
   makeDeposit,
-  applyDeposit
+  applyDeposit,
+  makeRedemption,
+  applyRedemption
 ) where
 
 import           Armadillo.BuildTx                  (DEXBuildTxError,
                                                      DepositOutput (..),
                                                      PoolOutput (..),
                                                      PoolState (..),
+                                                     RedeemOutput (..),
                                                      ReferenceScripts,
                                                      initialLiquidity)
 import qualified Armadillo.BuildTx                  as BuildTx
@@ -147,5 +150,18 @@ makeDeposit scripts operator poolCfg quantity = do
 applyDeposit :: (MonadUtxoQuery m, MonadBlockchain m, MonadError TxCommandError m) => ReferenceScripts TxIn -> Scripts -> Operator Signing -> DepositOutput TxIn -> PoolOutput TxIn -> m (PoolOutput TxIn)
 applyDeposit refScripts scripts operator deposit pool = do
   ((poolOut, rewardOut), btx) <- runBuildTxT $ mapError BuildTxError $ BuildTx.applyDeposit refScripts scripts operator deposit pool
+  tx <- mapError BalanceSubmitFailed (balanceAndSubmitOperator operator (Just rewardOut) (btx emptyTx))
+  pure $ poolOut $> fst (head (txnUtxos tx))
+
+makeRedemption :: (MonadUtxoQuery m, MonadBlockchain m, MonadError TxCommandError m) => Scripts -> Operator Signing -> PoolConfig -> Quantity -> m (RedeemOutput TxIn)
+makeRedemption scripts operator poolCfg quantity = do
+  let pkh = C.verificationKeyHash $ verificationKey $ oPaymentKey operator
+  (out, btx) <- runBuildTxT $ mapError BuildTxError $ BuildTx.redeem scripts pkh Nothing poolCfg quantity
+  tx <- mapError BalanceSubmitFailed (balanceAndSubmitOperator operator Nothing (btx emptyTx))
+  pure $ out $> fst (head (txnUtxos tx))
+
+applyRedemption :: (MonadUtxoQuery m, MonadBlockchain m, MonadError TxCommandError m) => ReferenceScripts TxIn -> Scripts -> Operator Signing -> RedeemOutput TxIn -> PoolOutput TxIn -> m (PoolOutput TxIn)
+applyRedemption refScripts scripts operator deposit pool = do
+  ((poolOut, rewardOut), btx) <- runBuildTxT $ mapError BuildTxError $ BuildTx.applyRedemption refScripts scripts operator deposit pool
   tx <- mapError BalanceSubmitFailed (balanceAndSubmitOperator operator (Just rewardOut) (btx emptyTx))
   pure $ poolOut $> fst (head (txnUtxos tx))

@@ -31,6 +31,11 @@ module Armadillo.BuildTx(
   deposit,
   applyDeposit,
 
+  -- * Making redemptions
+  RedeemOutput(..),
+  redeem,
+  applyRedemption,
+
   -- * Etc.
   poolValue,
   mintToken
@@ -52,10 +57,15 @@ import           Armadillo.BuildTx.Pool          (PoolInflows (..),
                                                   poolNftAssetId, poolState,
                                                   poolValue, poolXAssetId,
                                                   poolYAssetId, reservesX,
-                                                  reservesY, rewardLp)
+                                                  reservesY, rewardLp,
+                                                  sharesAmount)
+import           Armadillo.BuildTx.Redeem        (RedeemOutput (..),
+                                                  amountRedeemed, redeem,
+                                                  redeemReturnOutput)
 import           Armadillo.BuildTx.Types         (DEXBuildTxError (..),
                                                   ReferenceScripts (..),
-                                                  deployReferenceScripts)
+                                                  deployReferenceScripts,
+                                                  txOutValue)
 import           Armadillo.Orphans               ()
 import           Armadillo.Scripts               (Scripts (..))
 import qualified Armadillo.Scripts               as Scripts
@@ -64,18 +74,22 @@ import           Cardano.Api                     (AssetName, NetworkId,
                                                   TxIn)
 import qualified Cardano.Api                     as C
 import qualified Cardano.Api.Shelley             as C
+import           Control.Monad.Except            (MonadError)
 import           Convex.BuildTx                  (MonadBuildTx, mintPlutusV2,
                                                   prependTxOut,
                                                   setMinAdaDepositAll,
                                                   spendPlutusV2RefWithInlineDatum)
 import           Convex.Class                    (MonadBlockchain (..))
 import           Convex.PlutusLedger             (unTransAddressInEra)
+import           Convex.Utils                    (mapError)
 import           Convex.Wallet.Operator          (Operator, operatorAddress)
+import qualified Data.Set                        as Set
 import           ErgoDex.Contracts.Pool          (PoolConfig (..))
 import qualified ErgoDex.Contracts.Pool          as Pool
 import           ErgoDex.Contracts.Proxy.Deposit (DepositConfig)
 import qualified ErgoDex.Contracts.Proxy.Deposit as D
 import qualified ErgoDex.Contracts.Proxy.Order   as Order
+import qualified ErgoDex.Contracts.Proxy.Redeem  as R
 import qualified PlutusLedgerApi.V1              as PV1
 
 import qualified Debug.Trace                     as Trace
@@ -90,9 +104,12 @@ mintToken name quantity = do
 applyDeposit :: (MonadBuildTx m, MonadBlockchain m) => ReferenceScripts TxIn -> Scripts -> Operator k -> DepositOutput TxIn -> PoolOutput TxIn -> m (PoolOutput (), C.TxOut C.CtxTx C.BabbageEra)
 applyDeposit ReferenceScripts{refScriptPool, refScriptDeposit} scripts@Scripts{sPoolValidator, sDepositValidator} op dep@DepositOutput{doCfg, doTxIn} poolOutput@PoolOutput{poConfig, poTxIn} = do
   (n, p) <- (,) <$> networkId <*> queryProtocolParameters
-  let D.DepositConfig{D.exFee, D.tokenA, D.collateralAda} = doCfg
+  let preIns = Set.fromList [doTxIn, poTxIn]
+      orderIx = fromIntegral $ Set.findIndex doTxIn preIns
+      poolIx = fromIntegral $ Set.findIndex poTxIn preIns
+      D.DepositConfig{D.exFee, D.tokenA, D.collateralAda} = doCfg
       PoolConfig{poolX, poolY} = poConfig
-      depositRed = Order.OrderRedeemer{Order.poolInIx = 0, Order.orderInIx = 1, Order.rewardOutIx = 1, Order.action = Order.Apply}
+      depositRed = Order.OrderRedeemer{Order.poolInIx = poolIx, Order.orderInIx = orderIx, Order.rewardOutIx = 1, Order.action = Order.Apply}
       poolRed    = Pool.PoolRedeemer{Pool.action = Pool.Deposit, Pool.selfIx = 0}
 
   (inX, inY) <-
@@ -117,8 +134,8 @@ applyDeposit ReferenceScripts{refScriptPool, refScriptDeposit} scripts@Scripts{s
           , reservesY = reservesY oldState + netInY
           }
 
-  Trace.traceM $ "inflows=" <> show inflows
-  Trace.traceM $ "poolState=" <> show (poolState poolOutput)
+  Trace.traceM $ "inflows="          <> show inflows
+  Trace.traceM $ "poolState="        <> show (poolState poolOutput)
   Trace.traceM $ "rewardsAndChange=" <> show rewardsAndChange
 
   spendPlutusV2RefWithInlineDatum doTxIn refScriptDeposit (Just $ fst sDepositValidator) depositRed
@@ -129,6 +146,43 @@ applyDeposit ReferenceScripts{refScriptPool, refScriptDeposit} scripts@Scripts{s
   newPoolOutput <- addPoolOutput scripts poConfig newState
   setMinAdaDepositAll p
   let opRewardOut = operatorRewardOutput n op 0
+
+  pure (newPoolOutput, opRewardOut)
+
+applyRedemption :: (MonadBuildTx m, MonadBlockchain m, MonadError DEXBuildTxError m) => ReferenceScripts TxIn -> Scripts -> Operator k -> RedeemOutput TxIn -> PoolOutput TxIn -> m (PoolOutput (), C.TxOut C.CtxTx C.BabbageEra)
+applyRedemption ReferenceScripts{refScriptPool, refScriptRedeem} scripts@Scripts{sPoolValidator, sRedeemValidator} op RedeemOutput{rdoCfg, rdoTxIn, rdoTxOut} poolOutput@PoolOutput{poConfig, poTxIn} = do
+  (n, p) <- (,) <$> networkId <*> queryProtocolParameters
+  let preIns = Set.fromList [rdoTxIn, poTxIn]
+      orderIx = fromIntegral $ Set.findIndex rdoTxIn preIns
+      poolIx = fromIntegral $ Set.findIndex poTxIn preIns
+      poolRed   = Pool.PoolRedeemer{Pool.action = Pool.Redeem, Pool.selfIx = 0}
+      redeemRed = Order.OrderRedeemer{Order.poolInIx = poolIx, Order.orderInIx = orderIx, Order.rewardOutIx = 1, Order.action = Order.Apply}
+      R.RedeemConfig{R.exFee} = rdoCfg
+
+      oldState = poolState poolOutput
+      rwds@RewardsAndChange{rewards, changeX, changeY} = sharesAmount oldState (amountRedeemed poConfig $ txOutValue rdoTxOut)
+
+      newState =
+        oldState
+          { liquidity = payRewards rewards (liquidity oldState)
+          , reservesX = reservesX oldState - changeX
+          , reservesY = reservesY oldState - changeY
+          }
+
+  spendPlutusV2RefWithInlineDatum rdoTxIn refScriptRedeem (Just $ fst sRedeemValidator) redeemRed
+  spendPlutusV2RefWithInlineDatum poTxIn  refScriptPool   (Just $ fst sPoolValidator)   poolRed
+
+  returnOut <- mapError CardanoApiError (redeemReturnOutput n poConfig rdoCfg (changeX, changeY))
+
+  prependTxOut returnOut
+  newPoolOutput <- addPoolOutput scripts poConfig newState
+
+  Trace.traceM $ "rewardsAndChange= " <> show rwds
+  Trace.traceM $ "poolState (old) = " <> show oldState
+  Trace.traceM $ "poolState (new) = " <> show newState
+
+  setMinAdaDepositAll p
+  let opRewardOut = operatorRewardOutput n op (Quantity exFee)
 
   pure (newPoolOutput, opRewardOut)
 
