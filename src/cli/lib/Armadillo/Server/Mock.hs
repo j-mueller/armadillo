@@ -6,6 +6,7 @@ module Armadillo.Server.Mock(
   mockLBEAPI,
   mockTxHistoryAPI,
   mockInternalAPI,
+  mockBuildTxAPI,
 
   -- * Values
   djedAdaPair,
@@ -16,30 +17,34 @@ module Armadillo.Server.Mock(
   getSellTxns,
   getAllTxns,
   getChartForPair,
-  getChartForDex
+  getChartForDex,
+
+  buildCreatePoolTx
   ) where
 
 import           Armadillo.Api        (AssetID (..), AssetListEntry (..),
-                                       BuySell (..), DexTimeseriesPoint (..),
-                                       Direction (..), FarmAPI,
-                                       FarmAssetData (..), FarmEntry (..),
-                                       HistoricAPI, HistoricPairData (..),
-                                       InternalAPI, LBEAPI, LBEArgs (..),
-                                       LBEResponse (..), LiquidityAPI,
-                                       Pair (..), PairID (..),
+                                       BuildTxAPI, BuySell (..), CreatePoolArgs,
+                                       DexTimeseriesPoint (..), Direction (..),
+                                       FarmAPI, FarmAssetData (..),
+                                       FarmEntry (..), HistoricAPI,
+                                       HistoricPairData (..), InternalAPI,
+                                       LBEAPI, LBEArgs (..), LBEResponse (..),
+                                       LiquidityAPI, Pair (..), PairID (..),
                                        PairTimeseriesPoint (..), Statistic (..),
                                        Transaction (..), TxHistoryAPI,
                                        TxHistoryEntry, UserAssetListEntry (..),
                                        UserFarmAssetData (..),
                                        UserFarmEntry (..), UserID (..),
-                                       UserLiquidity (..), getPairId, mkPair)
+                                       UserLiquidity (..), WrappedTx, getPairId,
+                                       mkPair)
 import           Control.Monad.Except (MonadError (throwError))
 import           Data.Map             (Map)
 import qualified Data.Map             as Map
 import           Data.String          (IsString (..))
 import           Data.Text            (Text)
 import           Servant.API          ((:<|>) (..))
-import           Servant.Server       (Server, ServerError, err404, errBody)
+import           Servant.Server       (Server, ServerError, err404, err501,
+                                       errBody)
 
 mockHistoricApi :: Server HistoricAPI
 mockHistoricApi =
@@ -197,3 +202,9 @@ getTxHistory _ _ = pure []
 
 mockInternalAPI :: Server InternalAPI
 mockInternalAPI = pure [] :<|> pure []
+
+buildCreatePoolTx :: MonadError ServerError m => CreatePoolArgs -> m WrappedTx
+buildCreatePoolTx _ = throwError err501
+
+mockBuildTxAPI :: Server BuildTxAPI
+mockBuildTxAPI = buildCreatePoolTx

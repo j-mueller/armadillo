@@ -17,16 +17,13 @@ import           Armadillo.Cli.Command      (Command (..), DebugCommand (..),
                                              Fee (..), PoolCommand (..),
                                              ServerConfig (..),
                                              WalletClientOptions (..))
-import           Armadillo.Test.AMMExecutor (AMMLog (..), RunningAMMExecutor,
-                                             withAMMExecutor)
+import           Armadillo.Kupo             (KupoConfig (..))
 import           Armadillo.Test.CliCommand  (ChainFollowerStartup (..), CliLog,
                                              RunningHttpServer (..),
                                              deployScripts, mkNodeClientConfig,
                                              runCliCommand, withHttpServer)
-import           Armadillo.Test.Explorer    (ExplorerLog (..),
-                                             ExplorerPort (..),
-                                             RunningExplorer (..),
-                                             startExplorer)
+import           Armadillo.Test.RunningKupo (KupoLog (..), RunningKupo,
+                                             withKupo)
 import           Cardano.Api                (AssetId, Quantity (..), TxIn)
 import qualified Cardano.Api                as C
 import           Convex.Devnet.CardanoNode  (NodeLog, RunningNode (..),
@@ -45,8 +42,7 @@ data TestLog =
   TNodeLog NodeLog
   | TWallet WalletLog
   | TCli CliLog
-  | TAMM AMMLog
-  | TExplorerLog ExplorerLog
+  | TKupoLog KupoLog
   deriving stock (Show, Generic)
   deriving anyclass (ToJSON, FromJSON)
 
@@ -58,7 +54,7 @@ data DevEnv =
       , wallet              :: RunningWalletServer
       , httpServer          :: RunningHttpServer
       , walletClientOptions :: WalletClientOptions
-      , executor            :: RunningAMMExecutor
+      , kupo                :: RunningKupo
       }
 
 {-| Set up a @DevEnv@ and tear it down after use.
@@ -69,11 +65,11 @@ withDevEnv action =
     withTempDir "armadillo" $ \tempDir -> do
       withCardanoNodeDevnet (contramap TNodeLog tracer) tempDir $ \node ->
         withWallet (contramap TWallet tracer) tempDir node $ \wallet -> do
-          refScripts <- deployScripts (contramap TCli tracer) tempDir node walletClientOptions_ (rwsOpConfigSigning wallet)
-          RunningExplorer{reConfig} <- startExplorer (contramap TExplorerLog tracer) node (ExplorerPort 11001)
-          withAMMExecutor (contramap TAMM tracer) tempDir node reConfig refScripts (rwsOpConfigSigning wallet) $ \executor ->
-            withHttpServer (contramap TCli tracer) tempDir ServerConfig{scPort = 9088} (StartChainFollower tempDir node) $ \httpServer ->
-              action DevEnv{tracer, tempDir, node, wallet, walletClientOptions = walletClientOptions_, executor, httpServer}
+          _refScripts <- deployScripts (contramap TCli tracer) tempDir node walletClientOptions_ (rwsOpConfigSigning wallet)
+          let kupoCfg = KupoConfig "localhost" 9999
+          withKupo (contramap TKupoLog tracer) tempDir node kupoCfg $ \kupo ->
+            withHttpServer (contramap TCli tracer) tempDir ServerConfig{scPort = 9088} (StartChainFollower tempDir node kupoCfg) $ \httpServer ->
+              action DevEnv{tracer, tempDir, node, wallet, walletClientOptions = walletClientOptions_, httpServer, kupo}
 
 walletClientOptions_ :: WalletClientOptions
 walletClientOptions_ =

@@ -31,23 +31,19 @@ import           Convex.Devnet.WalletServer (RunningWalletServer (..), getUTxOs,
                                              withWallet)
 import           Data.List                  (isInfixOf)
 import           System.FilePath            ((</>))
-import           Test.Tasty                 (DependencyType (..), TestTree,
-                                             after, testGroup)
+import           Test.Tasty                 (TestTree, testGroup)
 import           Test.Tasty.HUnit           (assertBool, assertEqual, testCase)
 
 tests :: TestTree
 tests = testGroup "integration"
   [ testGroup "setup"
     [ testCase "T1: cardano-node is available" checkCardanoNode
-    , after AllFinish "T1" $
-        testCase "T2: wallet is working" checkWallet
+    , testCase "T2: wallet is working" checkWallet
     ]
-  , after AllFinish "setup" $ testGroup "HTTP"
+  , testGroup "HTTP"
     [ testCase "T3: healthcheck" checkApiHealth
-    , after AllFinish "T3" $
-        testCase "T4: mock API" checkMockAPI
-    , after AllFinish "T4" $
-        testCase "T10: check deposit processing" checkDepositProcessing
+    , testCase "T4: mock API" checkMockAPI
+    , testCase "T10: check deposit processing" checkDepositProcessing
     -- , after AllFinish "T4" $
     --     testCase "T5: chain follower" checkChainFollower
     ]

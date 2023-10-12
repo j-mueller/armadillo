@@ -75,6 +75,7 @@ library
     Armadillo.Cli
     Armadillo.Cli.Command
     Armadillo.Command
+    Armadillo.Kupo
     Armadillo.NodeClient
     Armadillo.Orphans
     Armadillo.Scripts
@@ -89,7 +90,7 @@ library
     , base                                                              >=4.16
     , base16-bytestring
     , bytestring
-    , cardano-api
+    , cardano-api                                                       ==8.8.0.0
     , cardano-binary
     , cardano-dex-contracts-offchain
     , cborg
@@ -100,6 +101,7 @@ library
     , convex-wallet
     , dhall
     , filepath
+    , hex-text
     , http-client
     , katip
     , lens
@@ -144,6 +146,7 @@ test-suite armadillo-cli-test
     Armadillo.Test.DevEnv
     Armadillo.Test.Explorer
     Armadillo.Test.Integration
+    Armadillo.Test.RunningKupo
     Armadillo.Test.Scripts
     Armadillo.Test.UnitTest
     Armadillo.Test.Utils

@@ -12,6 +12,7 @@ module Armadillo.Command(
   CreatePoolParams(..),
   initialState,
   createPool,
+  localCreatePool,
   createToken,
   makeDeposit,
   applyDeposit,
@@ -31,6 +32,7 @@ import           Armadillo.Scripts                  (Scripts)
 import           Cardano.Api                        (AssetId, AssetName,
                                                      CardanoMode, Env,
                                                      LocalNodeConnectInfo,
+                                                     PaymentCredential,
                                                      Quantity (..), ScriptHash,
                                                      TxIn)
 import qualified Cardano.Api                        as C
@@ -51,12 +53,18 @@ import           Convex.Query                       (BalanceAndSubmitError,
                                                      MonadUtxoQuery,
                                                      WalletAPIQueryT,
                                                      balanceAndSubmitOperator,
+                                                     balanceOperator,
                                                      runWalletAPIQueryT,
-                                                     selectOperatorUTxO)
+                                                     signAndSubmitOperator,
+                                                     utxosByPayment)
 import           Convex.Utils                       (mapError, txnUtxos)
 import           Convex.Wallet.Operator             (Operator (oPaymentKey),
-                                                     Signing, verificationKey)
+                                                     Signing,
+                                                     operatorPaymentCredential,
+                                                     verificationKey)
 import           Data.Functor                       (($>))
+import qualified Data.Map                           as Map
+import           Data.Maybe                         (listToMaybe)
 import           ErgoDex.CardanoApi                 (CardanoApiScriptError)
 import           ErgoDex.Contracts.Pool             (PoolConfig, maxLqCap)
 import           GHC.Generics                       (Generic)
@@ -77,7 +85,7 @@ runBlockchainAction connectInfo nodeEnv env action =
 data TxCommandError =
   ScriptErr CardanoApiScriptError
   | BalanceSubmitFailed BalanceAndSubmitError
-  | NoSuitableInputFound (Operator Signing)
+  | NoSuitableInputFound PaymentCredential
   | BuildTxError DEXBuildTxError
   deriving (Show)
 
@@ -108,31 +116,39 @@ data CreatePoolParams =
     }
     deriving stock (Eq, Show, Generic)
 
-initialState :: CreatePoolParams -> PoolState
-initialState CreatePoolParams{cppAssetClassX=(_, Quantity resX), cppAssetClassY=(_, Quantity resY)} =
+initialState :: Quantity -> Quantity -> PoolState
+initialState (Quantity resX) (Quantity resY) =
   PoolState
     { reservesX = Quantity resX
     , reservesY = Quantity resY
     , liquidity = initialLiquidity (Quantity $ ceiling @Double $ sqrt $ fromIntegral $ resX * resY)
     }
 
-{-| Create a new LP pool
+{-| Build a (balanced, unsigned) transaction that creates a new pool
 -}
-createPool :: (MonadUtxoQuery m, MonadBlockchain m, MonadError TxCommandError m) => Scripts -> CreatePoolParams -> m (PoolOutput TxIn)
-createPool scripts params@CreatePoolParams{cppOperator, cppFee, cppAssetClassX, cppAssetClassY} = do
+createPool :: (MonadUtxoQuery m, MonadBlockchain m, MonadError TxCommandError m) => Scripts -> PaymentCredential -> Integer -> (AssetId, Quantity) -> (AssetId, Quantity) -> m (C.Tx C.BabbageEra, PoolOutput TxIn)
+createPool scripts paymentCredential fee pairX pairY = do
   let numTokens = Quantity maxLqCap
-  (txi, _) <- selectOperatorUTxO cppOperator >>= maybe (throwError $ NoSuitableInputFound cppOperator) pure
+  (txi, _) <- selectCredentialUtxo paymentCredential >>= maybe (throwError $ NoSuitableInputFound paymentCredential) pure
   (out, btx) <- runBuildTxT $ mapError ScriptErr $ do
     nft <- BuildTx.createPoolNft txi
     lqToken <- BuildTx.createPoolLiquidityToken txi numTokens
     let poolCfg = BuildTx.poolConfig
-                    (PL.transAssetId $ fst cppAssetClassX) (PL.transAssetId $ fst cppAssetClassY)
-                    cppFee
+                    (PL.transAssetId $ fst pairX) (PL.transAssetId $ fst pairY)
+                    fee
                     lqToken
                     nft
-    BuildTx.addPoolOutput scripts poolCfg (initialState params)
-  tx <- mapError BalanceSubmitFailed (balanceAndSubmitOperator cppOperator Nothing (btx emptyTx))
-  pure $ out $> fst (head (txnUtxos tx))
+    BuildTx.addPoolOutput scripts poolCfg (initialState (snd pairX) (snd pairY))
+  tx <- mapError BalanceSubmitFailed (balanceOperator paymentCredential Nothing (btx emptyTx))
+  pure (tx, out $> fst (head (txnUtxos tx)))
+
+{-| Create a new LP pool using the given operator's funds and private key
+-}
+localCreatePool :: (MonadUtxoQuery m, MonadBlockchain m, MonadError TxCommandError m) => Scripts -> CreatePoolParams -> m (PoolOutput TxIn)
+localCreatePool scripts CreatePoolParams{cppOperator, cppFee, cppAssetClassX, cppAssetClassY} = do
+  (plTx, plOut) <- createPool scripts (operatorPaymentCredential cppOperator) cppFee cppAssetClassX cppAssetClassY
+  _finalTx <- mapError BalanceSubmitFailed (signAndSubmitOperator cppOperator plTx)
+  pure plOut
 
 createToken :: (MonadUtxoQuery m, MonadBlockchain m, MonadError TxCommandError m) => Operator Signing -> AssetName -> Quantity -> m (C.Tx C.BabbageEra, ScriptHash)
 createToken operator name quantity = do
@@ -165,3 +181,7 @@ applyRedemption refScripts scripts operator deposit pool = do
   ((poolOut, rewardOut), btx) <- runBuildTxT $ mapError BuildTxError $ BuildTx.applyRedemption refScripts scripts operator deposit pool
   tx <- mapError BalanceSubmitFailed (balanceAndSubmitOperator operator (Just rewardOut) (btx emptyTx))
   pure $ poolOut $> fst (head (txnUtxos tx))
+
+{-| Select a single UTxO that is locked by the payment credential. |-}
+selectCredentialUtxo :: MonadUtxoQuery m => PaymentCredential -> m (Maybe (C.TxIn, C.TxOut C.CtxUTxO C.BabbageEra))
+selectCredentialUtxo = fmap (listToMaybe . Map.toList . C.unUTxO) . utxosByPayment

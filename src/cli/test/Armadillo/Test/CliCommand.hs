@@ -38,8 +38,9 @@ import           Armadillo.Cli.Command       (ApiClientOptions (..),
                                               PoolCommand (..),
                                               RefScriptCommand (..),
                                               ServerConfig (..),
-                                              WalletClientOptions (..),
-                                              unReadAssetId)
+                                              WalletClientOptions (..))
+import           Armadillo.Kupo              (KupoConfig (..))
+import           Armadillo.Utils             (unReadAssetId)
 import           Cardano.Api                 (ChainPoint, Quantity (..), TxIn)
 import           Control.Concurrent          (threadDelay)
 import           Control.Monad               (void)
@@ -99,7 +100,7 @@ runCliCommand tracer stateDirectory command =
     case result of
       ExitSuccess -> pure ()
       _ -> do
-        failure $ "runCliC ommand: " <> commandString command <> " exits with failure code " <> show result
+        failure $ "runCliCommand: " <> commandString command <> " exits with failure code " <> show result
 
 deployScripts :: Tracer IO CliLog -> FilePath -> RunningNode -> WalletClientOptions -> OperatorConfigSigning -> IO (ReferenceScripts TxIn)
 deployScripts tracer tempDir node walletClientOptions opConfigSigning = do
@@ -125,10 +126,12 @@ cliProcess cwd command = (proc cliExecutable strArgs){cwd} where
     _ -> []
 
   chainFollowerConf = \case
-    StartServer _ (Just (nodeClientConfig, NodeClientStateFile f, [])) ->
+    StartServer _ (Just (nodeClientConfig, NodeClientStateFile f, KupoConfig{kcHost, kcPort}, [])) ->
       nodeClientConfigArgs nodeClientConfig
+      ++ ["--kupo.host", kcHost]
+      ++ ["--kupo.port", show kcPort]
       ++ ["--node-client.file", f]
-    StartServer _ (Just (_, _, _cp)) -> error "chainFollowerConf: not supported: ChainPoints"
+    StartServer _ (Just (_, _, _, _cp)) -> error "chainFollowerConf: not supported: ChainPoints"
     _ -> []
 
   apiFile = \case
@@ -187,14 +190,14 @@ cliProcess cwd command = (proc cliExecutable strArgs){cwd} where
         walletClientOptionsCfg walletClient
         ++ operatorSigningConfig ocf
         ++ ["--pool.fee", show n]
-        ++ ["--pool.x.assetID", unReadAssetId (fst pairX)]
-        ++ ["--pool.y.assetID", unReadAssetId (fst pairY)]
+        ++ ["--pool.x.assetID", unReadAssetId ':' (fst pairX)]
+        ++ ["--pool.y.assetID", unReadAssetId ':' (fst pairY)]
       Deposit walletClient ocf apiOpts pairX pairY (Quantity q) ->
         walletClientOptionsCfg walletClient
         ++ operatorSigningConfig ocf
         ++ apiClientOpts apiOpts
-        ++ ["--pool.x.assetID", unReadAssetId pairX]
-        ++ ["--pool.y.assetID", unReadAssetId pairY]
+        ++ ["--pool.x.assetID", unReadAssetId ':' pairX]
+        ++ ["--pool.y.assetID", unReadAssetId ':' pairY]
         ++ ["--quantity", show q]
     _ -> []
 
@@ -253,15 +256,15 @@ data RunningHttpServer =
 {-| Whether to start the chain follower alongside the HTTP server
 -}
 data ChainFollowerStartup =
-  StartChainFollower FilePath RunningNode
+  StartChainFollower FilePath RunningNode KupoConfig
   | DontStartChainFollower
 
-chainFollowerConfig :: ChainFollowerStartup -> IO (Maybe (NodeClientConfig, NodeClientStateFile, [ChainPoint]))
+chainFollowerConfig :: ChainFollowerStartup -> IO (Maybe (NodeClientConfig, NodeClientStateFile, KupoConfig, [ChainPoint]))
 chainFollowerConfig = \case
   DontStartChainFollower -> pure Nothing
-  StartChainFollower fp rn -> do
+  StartChainFollower fp rn k -> do
     f <- NodeClientStateFile <$> emptyTempFile fp "node-client-state"
-    pure (Just (mkNodeClientConfig rn, f, []))
+    pure (Just (mkNodeClientConfig rn, f, k, []))
 
 {-| Start the armadillo HTTP server
 -}

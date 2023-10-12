@@ -11,8 +11,9 @@ import           Armadillo.BuildTx              (DepositOutput (..),
 import qualified Armadillo.BuildTx              as BuildTx
 import           Armadillo.Command              (CreatePoolParams (..),
                                                  applyDeposit, applyRedemption,
-                                                 createPool, deployRefScripts,
-                                                 makeDeposit, makeRedemption)
+                                                 deployRefScripts,
+                                                 localCreatePool, makeDeposit,
+                                                 makeRedemption)
 import qualified Armadillo.Test.Scripts         as Scripts
 import           Armadillo.Test.Utils           (checkRefScriptsUTxO,
                                                  loadScripts)
@@ -98,7 +99,7 @@ createLQPool = failOnError $ do
               , cppAssetClassX = second (\q -> q - 200) pair1
               , cppAssetClassY = second (\q -> q - 200) pair2
               }
-  po@PoolOutput{poConfig} <- createPool scripts cpps
+  po@PoolOutput{poConfig} <- localCreatePool scripts cpps
   let nftAssetId = BuildTx.poolNftAssetId poConfig
       vl = BuildTx.poolValue po
   liftIO $ assertEqual "Should have pool NFT" 1 (C.selectAsset vl nftAssetId)

@@ -50,7 +50,8 @@ runCli = do
       StartServer{serverConfig, nodeClientConfig} -> do
         putStrLn $ "Starting server on port " <> show (scPort serverConfig)
         let (katipConfig, _, _) = config
-        stateVar <- traverse (\(cfg, stateFile, chainPoints) -> NodeClient.runArmadilloNodeClient scripts katipConfig cfg stateFile chainPoints) nodeClientConfig
+        stateVar <- flip traverse nodeClientConfig $ \(cfg, stateFile, kupoConfig, chainPoints) ->
+          (,) <$> Server.mkTxBuildingContext kupoConfig cfg <*> NodeClient.runArmadilloNodeClient scripts katipConfig cfg stateFile chainPoints
         Server.runServer stateVar serverConfig
       WriteAPIFile{filePath} -> do
         putStrLn $ "Writing API to " <> filePath
@@ -85,7 +86,7 @@ runCli = do
                     , cppAssetClassX
                     , cppAssetClassY
                     }
-            result <- runMonadLogKatip config (Command.runBlockchainAction connectInfo nodeEnv walletEnv (Command.createPool scripts params))
+            result <- runMonadLogKatip config (Command.runBlockchainAction connectInfo nodeEnv walletEnv (Command.localCreatePool scripts params))
             case result of
               Left err -> do
                 putStrLn (show err)

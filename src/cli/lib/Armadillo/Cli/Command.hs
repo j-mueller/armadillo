@@ -14,12 +14,10 @@ module Armadillo.Cli.Command(
   NodeClientStateFile(..),
   ApiClientOptions(..),
   apiClientEnv,
-
-  -- * Internals exposed for debuggung
-  readAssetId,
-  unReadAssetId
 ) where
 
+import           Armadillo.Kupo         (KupoConfig, parseKupoConfig)
+import           Armadillo.Utils        (readAssetId, unReadAssetId)
 import           Cardano.Api            (AssetId, CardanoMode, ChainPoint, Env,
                                          LocalNodeConnectInfo, Quantity (..))
 import qualified Cardano.Api            as C
@@ -81,7 +79,7 @@ newtype NodeClientStateFile = NodeClientStateFile FilePath
   deriving stock (Eq, Show)
 
 data Command =
-  StartServer{serverConfig :: ServerConfig, nodeClientConfig :: Maybe (NodeClientConfig, NodeClientStateFile,[ChainPoint]) } -- ^ Serve the API
+  StartServer{serverConfig :: ServerConfig, nodeClientConfig :: Maybe (NodeClientConfig, NodeClientStateFile, KupoConfig, [ChainPoint]) } -- ^ Serve the API
   | WriteAPIFile{filePath :: FilePath } -- ^ Write the API to a file
   | RefScript NodeClientConfig RefScriptCommand
   | Pool NodeClientConfig (Maybe FilePath) PoolCommand
@@ -109,7 +107,11 @@ startServer = command "start-server" $
   info (StartServer <$> parseServerConfig <*> optional nodeClientParser) (fullDesc <> progDesc "Start the server") where
     stateFileParser = strOption (long "node-client.file" <> help "The JSON file where the state of the chain follower will be stored")
     nodeClientParser =
-      (,,) <$> parseNodeClientConfig <*> fmap NodeClientStateFile stateFileParser <*> many parseChainPoint
+      (,,,)
+        <$> parseNodeClientConfig
+        <*> fmap NodeClientStateFile stateFileParser
+        <*> parseKupoConfig
+        <*> many parseChainPoint
 
 writeApi :: Mod CommandFields Command
 writeApi = command "write-api" $
@@ -171,7 +173,7 @@ data PoolCommand =
   deriving stock (Eq, Show)
 
 parseAssetId :: String -> Parser AssetId
-parseAssetId x = option (eitherReader readAssetId) (long ("pool." <> x <> ".assetID") <> help "Asset ID")
+parseAssetId x = option (eitherReader $ readAssetId ':') (long ("pool." <> x <> ".assetID") <> help "Asset ID")
 
 parseQuantity :: Parser Quantity
 parseQuantity =
@@ -213,23 +215,6 @@ parseDebugOutFile =
     ( long "out.file"
     <> metavar "FILE"
     <> help "Filepath for the output" )
-
-readAssetId :: String -> Either String AssetId
-readAssetId = \case
-  "ada" -> Right C.AdaAssetId
-  x -> case splitAt 56 x of
-        (policyId, ':' : assetName) ->
-          C.AssetId
-            <$> (first (\err -> "Failed to decode policy ID: " <> show err) $ C.deserialiseFromRawBytesHex (C.proxyToAsType Proxy) (Text.encodeUtf8 $ Text.pack policyId))
-            <*> (first (\err -> "Failed to decode asset name: " <> show err) $ C.deserialiseFromRawBytesHex (C.proxyToAsType Proxy) (Text.encodeUtf8 $ Text.pack assetName))
-        _ -> Left "Unable to decode asset ID. Expected <56-character hex encoded policy ID>:<hex-encoded asset name>"
-
-unReadAssetId :: AssetId -> String
-unReadAssetId = \case
-  C.AdaAssetId -> "ada"
-  C.AssetId policyId assetName ->
-    Text.unpack $
-      C.serialiseToRawBytesHexText policyId <> ":" <> C.serialiseToRawBytesHexText assetName
 
 parseChainPoint :: Parser ChainPoint
 parseChainPoint = option rd (long "chain-point" <> metavar "BLOCKID:SLOTNO" <> help "Chain point from which to start synchronising.") where

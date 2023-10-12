@@ -9,6 +9,7 @@ module Armadillo.Api(
   openAPI,
   writeApiToFile,
   AssetID(..),
+  toCardanoAssetId,
   Pair(..),
   canonicalOrder,
   mkPair,
@@ -40,10 +41,16 @@ module Armadillo.Api(
   TxHistoryAPI,
   Healthcheck,
   InternalAPI,
+  BuildTxAPI,
+
   -- * endpoints
   getHealth,
   getPairs,
   getTransactions,
+
+  CreatePoolArgs(..),
+  WrappedTx(..),
+  buildCreatePoolTx,
 
   -- ** Internal endpoints
   getPoolOutputs,
@@ -52,28 +59,41 @@ module Armadillo.Api(
 ) where
 
 import           Armadillo.BuildTx               (DepositOutput, PoolOutput)
+import           Armadillo.Utils                 (readAssetId)
 import           Cardano.Api                     (TxIn)
-import           Data.Aeson                      (FromJSON, FromJSONKey, ToJSON,
-                                                  ToJSONKey)
+import qualified Cardano.Api                     as C
+import           Data.Aeson                      (FromJSON (..), FromJSONKey,
+                                                  ToJSON (..), ToJSONKey)
+import           Data.Bifunctor                  (Bifunctor (..))
 import qualified Data.ByteString.Lazy            as BSL
 import           Data.OpenApi                    (ToParamSchema, ToSchema)
 import           Data.OpenApi.Internal           (OpenApi)
 import           Data.OpenApi.Internal.Utils     (encodePretty)
 import           Data.Proxy                      (Proxy (..))
 import           Data.Text                       (Text)
+import qualified Data.Text                       as Text
+import qualified Data.Text.Encoding              as Text
 import           GHC.Generics                    (Generic)
+import           PlutusLedgerApi.V1.Crypto       (PubKeyHash (..))
 import           Servant.API                     (Capture, Description,
                                                   FromHttpApiData, Get, JSON,
-                                                  NoContent, Post, QueryParam,
-                                                  ReqBody, ToHttpApiData,
-                                                  type (:>), (:<|>) (..))
+                                                  NoContent, PlainText, Post,
+                                                  QueryParam, ReqBody,
+                                                  ToHttpApiData, type (:>),
+                                                  (:<|>) (..))
+import           Servant.API.ContentTypes        (MimeRender (..),
+                                                  MimeUnrender (..))
 import           Servant.Client                  (ClientEnv, client, runClientM)
 import           Servant.Client.Core.ClientError (ClientError)
 import           Servant.OpenApi                 (toOpenApi)
+import qualified Text.Hex                        as Hex
 
 newtype AssetID = AssetID Text
   deriving stock (Eq, Ord, Show, Generic)
   deriving newtype (ToJSON, FromJSON, ToJSONKey, FromJSONKey, ToSchema, ToParamSchema, ToHttpApiData, FromHttpApiData)
+
+toCardanoAssetId :: AssetID -> Either String C.AssetId
+toCardanoAssetId (AssetID t) = readAssetId ':' (Text.unpack t)
 
 newtype PairID = PairID Text
   deriving stock (Eq, Ord, Show, Generic)
@@ -391,7 +411,10 @@ type TxHistoryAPI =
 
 type Healthcheck = "healthcheck" :> Description "Is the server alive?" :> Get '[JSON] NoContent
 
-type FullAPI = API :<|> ("internal" :> InternalAPI)
+type FullAPI =
+  API
+  :<|> ("internal" :> InternalAPI)
+  :<|> ("build-tx" :> BuildTxAPI)
 
 type API =
   Healthcheck
@@ -434,7 +457,6 @@ getTransactions clientEnv limit pair = do
   let _healthcheck :<|> (_pairs :<|> _historic :<|> _buyTxns :<|> _sellTxns :<|> allTxns :<|> _) :<|> _ = client (Proxy @API)
   runClientM (allTxns limit pair) clientEnv
 
-
 -- API for internal use (CLI)
 type InternalAPI =
   "pools" :> Get '[JSON] [PoolOutput TxIn]
@@ -449,3 +471,41 @@ getDepositOutputs :: ClientEnv -> IO (Either ClientError [DepositOutput TxIn])
 getDepositOutputs =
   let _pools :<|> deposits = client (Proxy @("internal" :> InternalAPI))
   in runClientM deposits
+
+newtype WrappedTx = WrappedTx (C.Tx C.BabbageEra)
+
+instance ToJSON WrappedTx where
+  toJSON (WrappedTx tx) = toJSON (C.serialiseToTextEnvelope Nothing tx)
+
+instance FromJSON WrappedTx where
+  parseJSON x = parseJSON x >>= either (fail . show) (pure . WrappedTx) . C.deserialiseFromTextEnvelope (C.proxyToAsType Proxy)
+
+instance MimeRender PlainText WrappedTx where
+  mimeRender _ (WrappedTx tx) = BSL.fromStrict $ Text.encodeUtf8 $ Hex.encodeHex $ C.serialiseToCBOR tx
+
+instance MimeUnrender PlainText WrappedTx where
+  mimeUnrender _ bs = do
+    txt <- first show (Text.decodeUtf8' $ BSL.toStrict bs)
+    binary <- maybe (Left "Bad hex format") pure (Hex.decodeHex txt)
+    bimap (\err -> "Deserialisation from CBOR failed: " <> show err) WrappedTx (C.deserialiseFromCBOR (C.proxyToAsType Proxy) binary)
+
+data CreatePoolArgs =
+  CreatePoolArgs
+    { cpoAssetX            :: AssetID
+    , cpoAssetY            :: AssetID
+    , cpoQuantityX         :: Integer
+    , cpoQuantityY         :: Integer
+    , cpoFeeNumerator      :: Integer
+    , cpoPublicKeyHash     :: PubKeyHash
+    , cpoStakingCredential :: Maybe PubKeyHash
+    }
+    deriving stock (Eq, Show, Generic)
+    deriving anyclass (ToJSON, FromJSON)
+
+type BuildTxAPI =
+  "create-pool" :> Description "Create a new AMM pool" :> ReqBody '[JSON] CreatePoolArgs :> Post '[JSON] WrappedTx
+
+buildCreatePoolTx :: ClientEnv -> CreatePoolArgs -> IO (Either ClientError WrappedTx)
+buildCreatePoolTx clientEnv args =
+  let postTx = client (Proxy @("build-tx" :> BuildTxAPI))
+  in runClientM (postTx args) clientEnv
