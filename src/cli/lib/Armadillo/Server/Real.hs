@@ -36,7 +36,7 @@ import           Armadillo.Scripts                    (Scripts,
                                                        loadScriptsConfig,
                                                        scriptsFromScriptsConfig)
 import qualified Armadillo.Server.Mock                as M
-import           Cardano.Api                          (Quantity (..))
+import           Cardano.Api                          (Quantity (..), TxIn)
 import qualified Cardano.Api                          as C
 import           Control.Concurrent.STM               (TVar, atomically,
                                                        readTVar)
@@ -51,6 +51,7 @@ import           Convex.PlutusLedger                  (unTransAssetId,
                                                        unTransPubKeyHash)
 import           Convex.Utils                         (liftEither, mapError)
 import qualified Convex.Utxos
+import           Data.Bifunctor                       (Bifunctor (..))
 import           Data.Foldable                        (toList)
 import qualified Data.Map                             as Map
 import           Data.Maybe                           (catMaybes)
@@ -75,8 +76,8 @@ historicAPI tv =
   :<|> M.getChartForDex
 
 buildTxAPI :: TxBuildingContext -> TVar ChainFollowerState -> Server BuildTxAPI
-buildTxAPI ctx tv =
-  createPoolTx ctx tv
+buildTxAPI ctx _tv =
+  createPoolTx ctx
 
 data ConversionError =
   PlutusToCardanoApiError C.SerialiseAsRawBytesError
@@ -154,12 +155,11 @@ fromBlockchainError err = err500{errBody = fromString ("cardano-node action fail
 fromBuildTxError :: BuildTxError -> ServerError
 fromBuildTxError err = err500{errBody = fromString ("build tx action failed: " <> show err)}
 
-createPoolTx :: forall m. (MonadIO m, MonadError ServerError m) => TxBuildingContext -> TVar ChainFollowerState -> CreatePoolArgs -> m WrappedTx
-createPoolTx ctx@TxBuildingContext{scripts} tvar args@CreatePoolArgs{cpoFeeNumerator, cpoAssetX, cpoAssetY, cpoQuantityX, cpoQuantityY, cpoPublicKeyHash, cpoStakingCredential} = runMonadLogIgnoreT $ runTxBuildAction ctx $ do
+createPoolTx :: forall m. (MonadIO m, MonadError ServerError m) => TxBuildingContext -> CreatePoolArgs -> m (WrappedTx, PoolOutput TxIn)
+createPoolTx ctx@TxBuildingContext{scripts} CreatePoolArgs{cpoFeeNumerator, cpoAssetX, cpoAssetY, cpoQuantityX, cpoQuantityY, cpoPublicKeyHash} = runMonadLogIgnoreT $ runTxBuildAction ctx $ do
   paymentCred <- C.PaymentCredentialByKey <$> liftEither (fromBuildTxError . SerialisationError) (pure $ unTransPubKeyHash cpoPublicKeyHash)
   (assetX, assetY) <- (,) <$> parseAssetID cpoAssetX <*> parseAssetID cpoAssetY
-  (tx, _) <- mapError (fromBuildTxError . TxCommandError) (Command.createPool scripts paymentCred  cpoFeeNumerator (assetX, Quantity cpoQuantityX) (assetY, Quantity cpoQuantityY))
-  undefined
+  first WrappedTx <$> mapError (fromBuildTxError . TxCommandError) (Command.createPool scripts paymentCred  cpoFeeNumerator (assetX, Quantity cpoQuantityX) (assetY, Quantity cpoQuantityY))
 
 data BuildTxError =
   SerialisationError C.SerialiseAsRawBytesError

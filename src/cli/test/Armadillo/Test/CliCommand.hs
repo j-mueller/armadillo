@@ -33,7 +33,7 @@ import           Armadillo.BuildTx           (DepositOutput, PoolOutput,
                                               ReferenceScripts (..))
 import           Armadillo.Cli.Command       (ApiClientOptions (..),
                                               Command (..), DebugCommand (..),
-                                              Fee (..), NodeClientConfig (..),
+                                              NodeClientConfig (..),
                                               NodeClientStateFile (..),
                                               PoolCommand (..),
                                               RefScriptCommand (..),
@@ -146,7 +146,6 @@ cliProcess cwd command = (proc cliExecutable strArgs){cwd} where
 
   poolCom = \case
     Pool _ _ c -> case c of
-      Create{}  -> ["create"]
       Deposit{} -> ["deposit"]
     _ -> []
 
@@ -186,12 +185,6 @@ cliProcess cwd command = (proc cliExecutable strArgs){cwd} where
 
   poolArgs = \case
     Pool _ _ com -> case com of
-      Create walletClient ocf (Fee n) pairX pairY ->
-        walletClientOptionsCfg walletClient
-        ++ operatorSigningConfig ocf
-        ++ ["--pool.fee", show n]
-        ++ ["--pool.x.assetID", unReadAssetId ':' (fst pairX)]
-        ++ ["--pool.y.assetID", unReadAssetId ':' (fst pairY)]
       Deposit walletClient ocf apiOpts pairX pairY (Quantity q) ->
         walletClientOptionsCfg walletClient
         ++ operatorSigningConfig ocf

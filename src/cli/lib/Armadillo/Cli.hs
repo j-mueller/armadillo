@@ -10,12 +10,11 @@ module Armadillo.Cli(
 import qualified Armadillo.Api              as Api
 import           Armadillo.BuildTx          (PoolOutput (..))
 import           Armadillo.Cli.Command      (Command (..), DebugCommand (..),
-                                             Fee (..), PoolCommand (..),
+                                             PoolCommand (..),
                                              RefScriptCommand (..),
                                              ServerConfig (..), apiClientEnv,
                                              localNodeConnectInfo, parseCommand,
                                              walletClientEnv)
-import           Armadillo.Command          (CreatePoolParams (..))
 import qualified Armadillo.Command          as Command
 import qualified Armadillo.NodeClient       as NodeClient
 import           Armadillo.Scripts          (loadScriptsConfig,
@@ -76,22 +75,6 @@ runCli = do
       Pool nodeConfig outFile com -> do
         (connectInfo, nodeEnv) <- localNodeConnectInfo nodeConfig
         case com of
-          Create walletClient operatorConfig (Fee cppFee) cppAssetClassX cppAssetClassY -> do
-            op <- loadOperatorFiles operatorConfig
-            walletEnv <- walletClientEnv <$> mgr <*> pure walletClient
-            let params =
-                  CreatePoolParams
-                    { cppOperator = op
-                    , cppFee
-                    , cppAssetClassX
-                    , cppAssetClassY
-                    }
-            result <- runMonadLogKatip config (Command.runBlockchainAction connectInfo nodeEnv walletEnv (Command.localCreatePool scripts params))
-            case result of
-              Left err -> do
-                putStrLn (show err)
-                exitFailure
-              Right k -> traverse_ (\x' -> writeJSONFile x' k) outFile
           Deposit walletClient operatorConfig apiClientOptions assetClassX assetClassY quantity -> do
             op <- loadOperatorFiles operatorConfig
             m <- mgr

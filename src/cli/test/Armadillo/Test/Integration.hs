@@ -32,7 +32,8 @@ import           Convex.Devnet.WalletServer (RunningWalletServer (..), getUTxOs,
 import           Data.List                  (isInfixOf)
 import           System.FilePath            ((</>))
 import           Test.Tasty                 (TestTree, testGroup)
-import           Test.Tasty.HUnit           (assertBool, assertEqual, testCase)
+import           Test.Tasty.HUnit           (assertBool, assertEqual, testCase,
+                                             testCaseSteps)
 
 tests :: TestTree
 tests = testGroup "integration"
@@ -43,22 +44,8 @@ tests = testGroup "integration"
   , testGroup "HTTP"
     [ testCase "T3: healthcheck" checkApiHealth
     , testCase "T4: mock API" checkMockAPI
-    , testCase "T10: check deposit processing" checkDepositProcessing
-    -- , after AllFinish "T4" $
-    --     testCase "T5: chain follower" checkChainFollower
     ]
-  -- , after AllFinish "HTTP" $ testGroup "Commands"
-  --   [ testCase "T6: deployScripts" checkDeployScript
-  --   , after AllFinish "T6" $
-  --       testCase "T7: create currency" checkCreateCurrency
-  --   , after AllFinish "T7" $
-  --       testCase "T8: create pool" checkCreatePool
-  --   ]
-  -- , after AllFinish "Commands" $ testGroup "AMM interop"
-  --   [ testCase "T9: start AMM" checkStartAMM
-  --   , after AllFinish "T9" $
-  --       testCase "T10: check deposit processing" checkDepositProcessing
-  --   ]
+  , testCaseSteps "end-to-end" endToEndTest
   ]
 
 checkCardanoNode :: IO ()
@@ -106,13 +93,13 @@ checkCreateCurrency = withDevEnv $ \de@DevEnv{wallet, tracer} -> do
 checkCreatePool :: IO ()
 checkCreatePool = withDevEnv $ \de -> do
   asset1 <- createCurrency de "token1"
-  _p <- createPool de (Fee 123) asset1 C.AdaAssetId
+  _p <- createPool de (Fee 123) (asset1, 100) (C.AdaAssetId, 10)
   pure ()
 
 checkChainFollower :: IO ()
 checkChainFollower = withDevEnv $ \de@DevEnv{httpServer} -> do
   asset1 <- createCurrency de "token1"
-  _p <- createPool de (Fee 123) asset1 C.AdaAssetId
+  _p <- createPool de (Fee 123) (asset1, 100) (C.AdaAssetId, 10)
   threadDelay 3_000_000
   apiPairs httpServer >>= assertEqual "there should be one pair" 1 . length
 
@@ -120,15 +107,21 @@ checkStartAMM :: IO ()
 checkStartAMM = withDevEnv $ \_ -> do
   threadDelay 3_000_000
 
-checkDepositProcessing :: IO ()
-checkDepositProcessing = withDevEnv $ \de@DevEnv{httpServer} -> do
+endToEndTest :: (String -> IO ()) -> IO ()
+endToEndTest step = withDevEnv $ \de@DevEnv{httpServer} -> do
   threadDelay 3_000_000
+  step "Creating currency"
   asset1 <- createCurrency de "token1"
-  _p <- createPool de (Fee 123) asset1 C.AdaAssetId
+  step "Creating pool"
+  threadDelay 2_000_000
+  _p <- createPool de (Fee 123) (asset1, 100) (C.AdaAssetId, 100)
   threadDelay 3_000_000
+  step "Querying pools"
   [PoolOutput{poTxIn=oldTxI}] <- apiPools httpServer
+  step "Making a deposit"
   makeDeposit de asset1 C.AdaAssetId 50
   threadDelay 3_000_000
+  step "Checking that the deposit has been applied"
   [PoolOutput{poTxIn=newTxI}] <- apiPools httpServer
   assertBool "Old should be different from new" (oldTxI /= newTxI)
 

@@ -167,6 +167,7 @@ test-suite armadillo-cli-test
     , convex-coin-selection
     , convex-devnet
     , convex-mockchain
+    , convex-node-client
     , convex-wallet
     , dhall
     , filepath
@@ -221,6 +222,7 @@ executable armadillo-cli-dev
     , contra-tracer
     , convex-base
     , convex-devnet
+    , convex-node-client
     , convex-wallet
     , dhall
     , filepath

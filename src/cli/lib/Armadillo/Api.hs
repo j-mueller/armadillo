@@ -10,6 +10,7 @@ module Armadillo.Api(
   writeApiToFile,
   AssetID(..),
   toCardanoAssetId,
+  fromCardanoAssetId,
   Pair(..),
   canonicalOrder,
   mkPair,
@@ -59,7 +60,7 @@ module Armadillo.Api(
 ) where
 
 import           Armadillo.BuildTx               (DepositOutput, PoolOutput)
-import           Armadillo.Utils                 (readAssetId)
+import           Armadillo.Utils                 (readAssetId, unReadAssetId)
 import           Cardano.Api                     (TxIn)
 import qualified Cardano.Api                     as C
 import           Data.Aeson                      (FromJSON (..), FromJSONKey,
@@ -93,7 +94,10 @@ newtype AssetID = AssetID Text
   deriving newtype (ToJSON, FromJSON, ToJSONKey, FromJSONKey, ToSchema, ToParamSchema, ToHttpApiData, FromHttpApiData)
 
 toCardanoAssetId :: AssetID -> Either String C.AssetId
-toCardanoAssetId (AssetID t) = readAssetId ':' (Text.unpack t)
+toCardanoAssetId (AssetID t) = readAssetId '.' (Text.unpack t)
+
+fromCardanoAssetId :: C.AssetId -> AssetID
+fromCardanoAssetId = AssetID . Text.pack . unReadAssetId '.'
 
 newtype PairID = PairID Text
   deriving stock (Eq, Ord, Show, Generic)
@@ -503,9 +507,9 @@ data CreatePoolArgs =
     deriving anyclass (ToJSON, FromJSON)
 
 type BuildTxAPI =
-  "create-pool" :> Description "Create a new AMM pool" :> ReqBody '[JSON] CreatePoolArgs :> Post '[JSON] WrappedTx
+  "create-pool" :> Description "Create a new AMM pool" :> ReqBody '[JSON] CreatePoolArgs :> Post '[JSON] (WrappedTx, PoolOutput TxIn)
 
-buildCreatePoolTx :: ClientEnv -> CreatePoolArgs -> IO (Either ClientError WrappedTx)
-buildCreatePoolTx clientEnv args =
+buildCreatePoolTx :: CreatePoolArgs -> ClientEnv -> IO (Either ClientError (WrappedTx, PoolOutput TxIn))
+buildCreatePoolTx args clientEnv =
   let postTx = client (Proxy @("build-tx" :> BuildTxAPI))
   in runClientM (postTx args) clientEnv

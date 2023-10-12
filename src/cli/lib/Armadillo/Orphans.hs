@@ -16,7 +16,6 @@ import           Data.Bifunctor                  (Bifunctor (..))
 import qualified Data.ByteString                 as BS
 import qualified Data.ByteString.Base16          as Base16
 import qualified Data.ByteString.Lazy            as BSL
-import           Data.OpenApi                    (ToParamSchema, ToSchema)
 import           Data.String                     (IsString (..))
 import           Data.Text                       (Text)
 import qualified Data.Text                       as Text

@@ -82,11 +82,11 @@ fromKupoValue KupoValue{coins, assets=KupoAssets mp} = do
 
 data KupoOutput =
   KupoOutput
-    { transactionIndex :: Integer
-    , transaction_id   :: Text
-    , output_index     :: Word
-    , address          :: Text
-    , value            :: KupoValue
+    { transaction_index :: Integer
+    , transaction_id    :: Text
+    , output_index      :: Word
+    , address           :: Text
+    , value             :: KupoValue
     }
   deriving stock (Show, Generic)
   deriving anyclass (ToJSON, FromJSON)

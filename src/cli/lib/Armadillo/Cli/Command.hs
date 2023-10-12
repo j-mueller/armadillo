@@ -17,7 +17,7 @@ module Armadillo.Cli.Command(
 ) where
 
 import           Armadillo.Kupo         (KupoConfig, parseKupoConfig)
-import           Armadillo.Utils        (readAssetId, unReadAssetId)
+import           Armadillo.Utils        (readAssetId)
 import           Cardano.Api            (AssetId, CardanoMode, ChainPoint, Env,
                                          LocalNodeConnectInfo, Quantity (..))
 import qualified Cardano.Api            as C
@@ -25,11 +25,9 @@ import           Control.Monad.Except   (runExceptT)
 import qualified Convex.NodeQueries     as Node
 import           Convex.Wallet.Operator (OperatorConfigSigning,
                                          parseOperatorConfigSigning)
-import           Data.Bifunctor         (Bifunctor (..))
 import           Data.Proxy             (Proxy (..))
 import           Data.String            (IsString (..))
 import qualified Data.Text              as Text
-import qualified Data.Text.Encoding     as Text
 import qualified Network.HTTP.Client    as HTTP
 import           Options.Applicative    (CommandFields, Mod, Parser, ReadM,
                                          auto, command, eitherReader, fullDesc,
@@ -164,12 +162,8 @@ parseOutFile =
 newtype Fee = Fee Integer
   deriving stock (Eq, Ord, Show)
 
-parseFee :: Parser Fee
-parseFee = fmap Fee $ option auto (long "pool.fee" <> value 100 <> help "Pool fee")
-
 data PoolCommand =
-  Create WalletClientOptions OperatorConfigSigning Fee (AssetId, Quantity) (AssetId, Quantity)
-  | Deposit WalletClientOptions OperatorConfigSigning ApiClientOptions AssetId AssetId Quantity
+  Deposit WalletClientOptions OperatorConfigSigning ApiClientOptions AssetId AssetId Quantity
   deriving stock (Eq, Show)
 
 parseAssetId :: String -> Parser AssetId
@@ -179,18 +173,12 @@ parseQuantity :: Parser Quantity
 parseQuantity =
   Quantity <$> option auto (long "quantity" <> value 50 <> help "Amount of tokens")
 
-parseAssetIdQuantityPair :: String -> Parser (AssetId, Quantity)
-parseAssetIdQuantityPair x = (,) <$> parseAssetId x <*> parseQuantity
-
 poolCom :: Mod CommandFields Command
 poolCom = command "pool" $
   info (Pool <$> parseNodeClientConfig <*> optional parseDebugOutFile <*> parsePoolCommand) (fullDesc <> progDesc "Manage liquidity pools")
 
 parsePoolCommand :: Parser PoolCommand
-parsePoolCommand = subparser $ mconcat [poolCreate, poolDeposit]
-
-poolCreate :: Mod CommandFields PoolCommand
-poolCreate = command "create" $ info (Create <$> parseWalletClientOptions <*> parseOperatorConfigSigning <*> parseFee <*> parseAssetIdQuantityPair "x" <*> parseAssetIdQuantityPair "y") (fullDesc <> progDesc "Create a new pool")
+parsePoolCommand = subparser $ mconcat [poolDeposit]
 
 poolDeposit :: Mod CommandFields PoolCommand
 poolDeposit = command "deposit" $ info (Deposit <$> parseWalletClientOptions <*> parseOperatorConfigSigning <*> parseApiClientOptions <*> parseAssetId "x" <*> parseAssetId "y" <*> parseQuantity) (fullDesc <> progDesc "Make a deposit to a pool")
