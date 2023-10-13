@@ -17,39 +17,32 @@ module Armadillo.Server.Mock(
   getSellTxns,
   getAllTxns,
   getChartForPair,
-  getChartForDex,
-
-  buildCreatePoolTx
+  getChartForDex
   ) where
 
-import           Armadillo.Api          (AssetID (..), AssetListEntry (..),
-                                         BuildTxAPI, BuySell (..),
-                                         CreatePoolArgs,
-                                         DexTimeseriesPoint (..),
-                                         Direction (..), FarmAPI,
-                                         FarmAssetData (..), FarmEntry (..),
-                                         HistoricAPI, HistoricPairData (..),
-                                         InternalAPI, LBEAPI, LBEArgs (..),
-                                         LBEResponse (..), LiquidityAPI,
-                                         Pair (..), PairID (..),
-                                         PairTimeseriesPoint (..),
-                                         Statistic (..), Transaction (..),
-                                         TxHistoryAPI, TxHistoryEntry,
-                                         UserAssetListEntry (..),
-                                         UserFarmAssetData (..),
-                                         UserFarmEntry (..), UserID (..),
-                                         UserLiquidity (..), WrappedTx,
-                                         getPairId, mkPair)
-import           Armadillo.BuildTx.Pool (PoolOutput)
-import           Cardano.Api            (TxIn)
-import           Control.Monad.Except   (MonadError (throwError))
-import           Data.Map               (Map)
-import qualified Data.Map               as Map
-import           Data.String            (IsString (..))
-import           Data.Text              (Text)
-import           Servant.API            ((:<|>) (..))
-import           Servant.Server         (Server, ServerError, err404, err501,
-                                         errBody)
+import           Armadillo.Api        (AssetID (..), AssetListEntry (..),
+                                       BuildTxAPI, BuySell (..),
+                                       DexTimeseriesPoint (..), Direction (..),
+                                       FarmAPI, FarmAssetData (..),
+                                       FarmEntry (..), HistoricAPI,
+                                       HistoricPairData (..), InternalAPI,
+                                       LBEAPI, LBEArgs (..), LBEResponse (..),
+                                       LiquidityAPI, Pair (..), PairID (..),
+                                       PairTimeseriesPoint (..), Statistic (..),
+                                       Transaction (..), TxHistoryAPI,
+                                       TxHistoryEntry, UserAssetListEntry (..),
+                                       UserFarmAssetData (..),
+                                       UserFarmEntry (..), UserID (..),
+                                       UserLiquidity (..), WrappedTx, getPairId,
+                                       mkPair)
+import           Control.Monad.Except (MonadError (throwError))
+import           Data.Map             (Map)
+import qualified Data.Map             as Map
+import           Data.String          (IsString (..))
+import           Data.Text            (Text)
+import           Servant.API          ((:<|>) (..))
+import           Servant.Server       (Server, ServerError, err404, err501,
+                                       errBody)
 
 mockHistoricApi :: Server HistoricAPI
 mockHistoricApi =
@@ -208,8 +201,5 @@ getTxHistory _ _ = pure []
 mockInternalAPI :: Server InternalAPI
 mockInternalAPI = pure [] :<|> pure []
 
-buildCreatePoolTx :: MonadError ServerError m => CreatePoolArgs -> m (WrappedTx, PoolOutput TxIn)
-buildCreatePoolTx _ = throwError err501
-
 mockBuildTxAPI :: Server BuildTxAPI
-mockBuildTxAPI = buildCreatePoolTx
+mockBuildTxAPI = const (throwError err501) :<|> const (throwError err501)

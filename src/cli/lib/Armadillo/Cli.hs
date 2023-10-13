@@ -8,14 +8,12 @@ module Armadillo.Cli(
   ) where
 
 import qualified Armadillo.Api              as Api
-import           Armadillo.BuildTx          (PoolOutput (..))
 import           Armadillo.Cli.Command      (Command (..), DebugCommand (..),
-                                             PoolCommand (..),
                                              RefScriptCommand (..),
-                                             ServerConfig (..), apiClientEnv,
-                                             localNodeConnectInfo, parseCommand,
-                                             walletClientEnv)
+                                             ServerConfig (..),
+                                             localNodeConnectInfo, parseCommand)
 import qualified Armadillo.Command          as Command
+import           Armadillo.Kupo             (kupoClientEnv)
 import qualified Armadillo.NodeClient       as NodeClient
 import           Armadillo.Scripts          (loadScriptsConfig,
                                              scriptsFromScriptsConfig)
@@ -59,7 +57,7 @@ runCli = do
         (connectInfo, nodeEnv) <- localNodeConnectInfo nodeConfig
         case com of
           Deploy walletClient opConfig outFile -> do
-            walletEnv <- walletClientEnv <$> mgr <*> pure walletClient
+            walletEnv <- kupoClientEnv <$> mgr <*> pure walletClient
             op <- loadOperatorFiles opConfig
             x <- runMonadLogKatip config (Command.runBlockchainAction connectInfo nodeEnv walletEnv (Command.deployRefScripts scripts op))
             case x of
@@ -72,33 +70,13 @@ runCli = do
           Check{} -> do
             putStrLn "Not implemented: reference-scripts check"
             exitFailure
-      Pool nodeConfig outFile com -> do
-        (connectInfo, nodeEnv) <- localNodeConnectInfo nodeConfig
-        case com of
-          Deposit walletClient operatorConfig apiClientOptions assetClassX assetClassY quantity -> do
-            op <- loadOperatorFiles operatorConfig
-            m <- mgr
-            let walletEnv = walletClientEnv m walletClient
-                apiEnv    = apiClientEnv m apiClientOptions
-                isMatchingPool _ = True -- FIXME
-            pools <- Api.getPoolOutputs apiEnv >>= either (error . show . (<>) "getPoolOutputs failed: " . show) pure
-            case filter isMatchingPool pools of
-              [] -> error $ "No pool found for " <> show (assetClassX, assetClassY)
-              PoolOutput{poConfig}:_ -> do
-                result <- runMonadLogKatip config (Command.runBlockchainAction connectInfo nodeEnv walletEnv $ Command.makeDeposit scripts op poConfig quantity)
-                case result of
-                  Left err -> do
-                    putStrLn (show err)
-                    exitFailure
-                  Right tx ->
-                    traverse_ (\x' -> writeJSONFile x' tx) outFile
       Debug nodeConfig outFile com -> do
         (connectInfo, nodeEnv) <- localNodeConnectInfo nodeConfig
         case com of
             CreateCurrency walletClient operatorConfig tokenName -> do
               putStrLn "Creating new currency"
               op <- loadOperatorFiles operatorConfig
-              walletEnv <- walletClientEnv <$> mgr <*> pure walletClient
+              walletEnv <- kupoClientEnv <$> mgr <*> pure walletClient
               x <- runMonadLogKatip config (Command.runBlockchainAction connectInfo nodeEnv walletEnv (Command.createToken op (fromString tokenName) 1000))
               case x of
                 Left err -> do

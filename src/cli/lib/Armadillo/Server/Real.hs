@@ -17,11 +17,14 @@ module Armadillo.Server.Real(
 import           Armadillo.Api                        (AssetID (..), BuildTxAPI,
                                                        CreatePoolArgs (..),
                                                        HistoricAPI, InternalAPI,
+                                                       MakeDepositArgs (..),
                                                        Pair (..),
                                                        WrappedTx (..), mkPair,
                                                        toCardanoAssetId)
 import           Armadillo.BuildTx                    (DepositOutput (..),
-                                                       PoolOutput (..))
+                                                       PoolOutput (..),
+                                                       poolXAssetId,
+                                                       poolYAssetId)
 import           Armadillo.ChainFollower.DepositState (DepositState (..))
 import           Armadillo.ChainFollower.PoolState    (PoolUtxoState (..))
 import           Armadillo.ChainFollower.State        (ChainFollowerState (..))
@@ -39,7 +42,7 @@ import qualified Armadillo.Server.Mock                as M
 import           Cardano.Api                          (Quantity (..), TxIn)
 import qualified Cardano.Api                          as C
 import           Control.Concurrent.STM               (TVar, atomically,
-                                                       readTVar)
+                                                       readTVar, readTVarIO)
 import           Control.Monad.Except                 (MonadError (..),
                                                        runExcept, throwError)
 import           Control.Monad.IO.Class               (MonadIO (..))
@@ -48,7 +51,8 @@ import           Convex.Class                         (MonadBlockchainCardanoNod
                                                        runMonadBlockchainCardanoNodeT)
 import           Convex.MonadLog                      (runMonadLogIgnoreT)
 import           Convex.PlutusLedger                  (unTransAssetId,
-                                                       unTransPubKeyHash)
+                                                       unTransPubKeyHash,
+                                                       unTransStakeKeyHash)
 import           Convex.Utils                         (liftEither, mapError)
 import qualified Convex.Utxos
 import           Data.Bifunctor                       (Bifunctor (..))
@@ -76,8 +80,7 @@ historicAPI tv =
   :<|> M.getChartForDex
 
 buildTxAPI :: TxBuildingContext -> TVar ChainFollowerState -> Server BuildTxAPI
-buildTxAPI ctx _tv =
-  createPoolTx ctx
+buildTxAPI ctx tv = createPoolTx ctx :<|> makeDeposit ctx tv
 
 data ConversionError =
   PlutusToCardanoApiError C.SerialiseAsRawBytesError
@@ -161,6 +164,14 @@ createPoolTx ctx@TxBuildingContext{scripts} CreatePoolArgs{cpoFeeNumerator, cpoA
   (assetX, assetY) <- (,) <$> parseAssetID cpoAssetX <*> parseAssetID cpoAssetY
   first WrappedTx <$> mapError (fromBuildTxError . TxCommandError) (Command.createPool scripts paymentCred  cpoFeeNumerator (assetX, Quantity cpoQuantityX) (assetY, Quantity cpoQuantityY))
 
+makeDeposit :: forall m. (MonadIO m, MonadError ServerError m) => TxBuildingContext -> TVar ChainFollowerState -> MakeDepositArgs -> m (WrappedTx, DepositOutput TxIn)
+makeDeposit ctx@TxBuildingContext{scripts} tv MakeDepositArgs{mdAssetX, mdAssetY, mdQuantityX, mdQuantityY, mdPublicKeyHash, mdStakingCredential} = runMonadLogIgnoreT $ runTxBuildAction ctx $ do
+  paymentCred <- liftEither (fromBuildTxError . SerialisationError) (pure $ unTransPubKeyHash mdPublicKeyHash)
+  stakeCred <- liftEither (fromBuildTxError . SerialisationError) (pure $ traverse unTransStakeKeyHash mdStakingCredential)
+  (assetX, assetY) <- (,) <$> parseAssetID mdAssetX <*> parseAssetID mdAssetY
+  PoolOutput{poConfig} <- liftIO (readTVarIO tv) >>= mapError (fromBuildTxError . TxCommandError) . selectPool assetX assetY
+  first WrappedTx <$> mapError (fromBuildTxError . TxCommandError) (Command.makeDeposit scripts paymentCred stakeCred poConfig (Quantity mdQuantityX, Quantity mdQuantityY))
+
 data BuildTxError =
   SerialisationError C.SerialiseAsRawBytesError
   | TxCommandError Command.TxCommandError
@@ -169,3 +180,12 @@ data BuildTxError =
 
 parseAssetID :: MonadError ServerError m => AssetID -> m C.AssetId
 parseAssetID = liftEither (fromBuildTxError . AssetIdParseFailed) . pure . toCardanoAssetId
+
+selectPool :: MonadError Command.TxCommandError m => C.AssetId -> C.AssetId -> ChainFollowerState -> m (PoolOutput TxIn)
+selectPool a b ChainFollowerState{cfsPoolState=PoolUtxoState{_utxos}} = do
+  let suitable PoolOutput{poConfig} =
+        let x = (poolXAssetId poConfig, poolYAssetId poConfig)
+        in x == (a, b) || x == (b, a)
+  case filter suitable (fmap snd $ toList $ Convex.Utxos._utxos _utxos) of
+    []  -> throwError (Command.NoSuitablePoolFound a b)
+    x:_ -> pure x

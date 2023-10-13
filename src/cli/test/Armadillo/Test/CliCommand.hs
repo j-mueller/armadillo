@@ -31,17 +31,13 @@ import           Armadillo.Api               (Pair, PairID, Transaction)
 import qualified Armadillo.Api               as Api
 import           Armadillo.BuildTx           (DepositOutput, PoolOutput,
                                               ReferenceScripts (..))
-import           Armadillo.Cli.Command       (ApiClientOptions (..),
-                                              Command (..), DebugCommand (..),
+import           Armadillo.Cli.Command       (Command (..), DebugCommand (..),
                                               NodeClientConfig (..),
                                               NodeClientStateFile (..),
-                                              PoolCommand (..),
                                               RefScriptCommand (..),
-                                              ServerConfig (..),
-                                              WalletClientOptions (..))
+                                              ServerConfig (..))
 import           Armadillo.Kupo              (KupoConfig (..))
-import           Armadillo.Utils             (unReadAssetId)
-import           Cardano.Api                 (ChainPoint, Quantity (..), TxIn)
+import           Cardano.Api                 (ChainPoint, TxIn)
 import           Control.Concurrent          (threadDelay)
 import           Control.Monad               (void)
 import           Control.Tracer              (Tracer, traceWith)
@@ -102,10 +98,10 @@ runCliCommand tracer stateDirectory command =
       _ -> do
         failure $ "runCliCommand: " <> commandString command <> " exits with failure code " <> show result
 
-deployScripts :: Tracer IO CliLog -> FilePath -> RunningNode -> WalletClientOptions -> OperatorConfigSigning -> IO (ReferenceScripts TxIn)
-deployScripts tracer tempDir node walletClientOptions opConfigSigning = do
+deployScripts :: Tracer IO CliLog -> FilePath -> RunningNode -> KupoConfig -> OperatorConfigSigning -> IO (ReferenceScripts TxIn)
+deployScripts tracer tempDir node kupoConfig opConfigSigning = do
   let outFile = tempDir </> "reference-scripts.json"
-  runCliCommand tracer tempDir (RefScript (mkNodeClientConfig node) $ Deploy walletClientOptions opConfigSigning outFile)
+  runCliCommand tracer tempDir (RefScript (mkNodeClientConfig node) $ Deploy kupoConfig opConfigSigning outFile)
   loadRefScripts outFile
 
 loadRefScripts :: FilePath -> IO (ReferenceScripts TxIn)
@@ -116,7 +112,6 @@ commandString = \case
   StartServer{} -> "start-server"
   WriteAPIFile{} -> "write-api"
   RefScript{} -> "reference-scripts"
-  Pool{} -> "pool"
   Debug{} -> "debug"
 
 cliProcess :: Maybe FilePath -> Command -> CreateProcess
@@ -144,11 +139,6 @@ cliProcess cwd command = (proc cliExecutable strArgs){cwd} where
       Check{}  -> ["check"]
     _ -> []
 
-  poolCom = \case
-    Pool _ _ c -> case c of
-      Deposit{} -> ["deposit"]
-    _ -> []
-
   debugCom = \case
     Debug _ _ c -> case c of
       CreateCurrency{} -> ["create-currency"]
@@ -156,13 +146,12 @@ cliProcess cwd command = (proc cliExecutable strArgs){cwd} where
 
   nodeClient = \case
     RefScript cfg _ -> nodeClientConfigArgs cfg
-    Pool cfg _ _ -> nodeClientConfigArgs cfg
     Debug cfg _ _ -> nodeClientConfigArgs cfg
     _ -> []
 
-  walletClientOptions' = \case
-    RefScript _ (Deploy wco _ _) -> walletClientOptionsCfg wco
-    Debug _ _ (CreateCurrency wco _ _) -> walletClientOptionsCfg wco
+  kupoConf = \case
+    RefScript _ (Deploy wco _ _) -> kupoConfigOptions wco
+    Debug _ _ (CreateCurrency wco _ _) -> kupoConfigOptions wco
     _ -> []
 
   operatorSigningConfig' = \case
@@ -176,22 +165,10 @@ cliProcess cwd command = (proc cliExecutable strArgs){cwd} where
 
   debugOutFile = \case
     Debug _ (Just f) _ -> ["--out.file", f]
-    Pool _ (Just f) _ -> ["--out.file", f]
     _ -> []
 
   outFile = \case
     RefScript _ (Deploy _ _ f) -> ["--out.file", f]
-    _ -> []
-
-  poolArgs = \case
-    Pool _ _ com -> case com of
-      Deposit walletClient ocf apiOpts pairX pairY (Quantity q) ->
-        walletClientOptionsCfg walletClient
-        ++ operatorSigningConfig ocf
-        ++ apiClientOpts apiOpts
-        ++ ["--pool.x.assetID", unReadAssetId ':' pairX]
-        ++ ["--pool.y.assetID", unReadAssetId ':' pairY]
-        ++ ["--quantity", show q]
     _ -> []
 
   strArgs =
@@ -203,27 +180,13 @@ cliProcess cwd command = (proc cliExecutable strArgs){cwd} where
       , nodeClient command
       , debugOutFile command
       , refCommand command
-      , poolCom command
       , debugCom command
-      , walletClientOptions' command
+      , kupoConf command
       , operatorSigningConfig' command
       , outFile command
       , tokenName command
-      , poolArgs command
       , ["+RTS", "-N2"]
       ]
-
-walletClientOptionsCfg :: WalletClientOptions -> [String]
-walletClientOptionsCfg WalletClientOptions{wcoHost, wcoPort} =
-  [ "--wallet.host", wcoHost
-  , "--wallet.port", show wcoPort
-  ]
-
-apiClientOpts :: ApiClientOptions -> [String]
-apiClientOpts ApiClientOptions{acoHost, acoPort} =
-  [ "--api.host", acoHost
-  , "--api.port", show acoPort
-  ]
 
 operatorSigningConfig :: OperatorConfigSigning -> [String]
 operatorSigningConfig OperatorConfigSigning{ocSigningKeyFile, ocStakeVerificationKeyFile} =
@@ -241,9 +204,8 @@ cliExecutable = "armadillo-cli"
 
 data RunningHttpServer =
   RunningHttpServer
-    { rhProcess    :: RunningCliProcess
-    , rhClient     :: ClientEnv
-    , rhApiOptions :: ApiClientOptions
+    { rhProcess :: RunningCliProcess
+    , rhClient  :: ClientEnv
     }
 
 {-| Whether to start the chain follower alongside the HTTP server
@@ -267,8 +229,7 @@ withHttpServer tracer stateDirectory cfg cfs action = do
   withCliCommand tracer stateDirectory command $ \rhProcess -> do
     rhClient <- mkClientEnv <$> newManager defaultManagerSettings <*> pure (BaseUrl Http "localhost" (scPort cfg) "")
     threadDelay 2_000_000
-    let rhApiOptions = ApiClientOptions{acoHost = "localhost", acoPort = scPort cfg}
-    action RunningHttpServer{rhClient, rhProcess, rhApiOptions}
+    action RunningHttpServer{rhClient, rhProcess}
 
 apiHealth :: RunningHttpServer -> IO ()
 apiHealth = void . runApiCall Api.getHealth
@@ -294,3 +255,9 @@ mkNodeClientConfig RunningNode{rnNodeConfigFile, rnNodeSocket} =
     { nccCardanoNodeSocket = rnNodeSocket
     , nccCardanoNodeConfigFile = rnNodeConfigFile
     }
+
+kupoConfigOptions :: KupoConfig -> [String]
+kupoConfigOptions KupoConfig{kcHost, kcPort} =
+  [ "--kupo.host", kcHost
+  , "--kupo.port", show kcPort
+  ]

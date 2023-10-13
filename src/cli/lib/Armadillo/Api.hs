@@ -53,6 +53,9 @@ module Armadillo.Api(
   WrappedTx(..),
   buildCreatePoolTx,
 
+  MakeDepositArgs(..),
+  buildMakeDepositTx,
+
   -- ** Internal endpoints
   getPoolOutputs,
   getDepositOutputs,
@@ -506,10 +509,28 @@ data CreatePoolArgs =
     deriving stock (Eq, Show, Generic)
     deriving anyclass (ToJSON, FromJSON)
 
+data MakeDepositArgs =
+  MakeDepositArgs
+    { mdAssetX            :: AssetID
+    , mdAssetY            :: AssetID
+    , mdQuantityX         :: Integer
+    , mdQuantityY         :: Integer
+    , mdPublicKeyHash     :: PubKeyHash
+    , mdStakingCredential :: Maybe PubKeyHash
+    }
+    deriving stock (Eq, Show, Generic)
+    deriving anyclass (ToJSON, FromJSON)
+
 type BuildTxAPI =
   "create-pool" :> Description "Create a new AMM pool" :> ReqBody '[JSON] CreatePoolArgs :> Post '[JSON] (WrappedTx, PoolOutput TxIn)
+  :<|> "deposit" :> Description "Make a deposit to a pool" :> ReqBody '[JSON] MakeDepositArgs :> Post '[JSON] (WrappedTx, DepositOutput TxIn)
 
 buildCreatePoolTx :: CreatePoolArgs -> ClientEnv -> IO (Either ClientError (WrappedTx, PoolOutput TxIn))
 buildCreatePoolTx args clientEnv =
-  let postTx = client (Proxy @("build-tx" :> BuildTxAPI))
+  let postTx :<|> _ = client (Proxy @("build-tx" :> BuildTxAPI))
   in runClientM (postTx args) clientEnv
+
+buildMakeDepositTx :: MakeDepositArgs -> ClientEnv -> IO (Either ClientError (WrappedTx, DepositOutput TxIn))
+buildMakeDepositTx args clientEnv =
+  let _ :<|> postDeposit = client (Proxy @("build-tx" :> BuildTxAPI))
+  in runClientM (postDeposit args) clientEnv

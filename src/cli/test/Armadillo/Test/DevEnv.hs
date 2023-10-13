@@ -10,20 +10,23 @@ module Armadillo.Test.DevEnv(
   withDevEnv,
   createCurrency,
   createPool,
-  makeDeposit
+  makeDeposit,
+  waitForKupoSync
 ) where
 
 import           Armadillo.Api                      (CreatePoolArgs (..),
+                                                     MakeDepositArgs (..),
                                                      WrappedTx (..))
 import qualified Armadillo.Api                      as Api
-import           Armadillo.BuildTx                  (PoolOutput)
+import           Armadillo.BuildTx                  (DepositOutput, PoolOutput)
 import           Armadillo.Cli                      (readJSONFile)
 import           Armadillo.Cli.Command              (Command (..),
                                                      DebugCommand (..),
-                                                     Fee (..), PoolCommand (..),
-                                                     ServerConfig (..),
-                                                     WalletClientOptions (..))
-import           Armadillo.Kupo                     (KupoConfig (..))
+                                                     Fee (..),
+                                                     ServerConfig (..))
+import           Armadillo.Kupo                     (KupoConfig (..),
+                                                     KupoHealth (..))
+import qualified Armadillo.Kupo                     as Kupo
 import           Armadillo.Test.CliCommand          (ChainFollowerStartup (..),
                                                      CliLog,
                                                      RunningHttpServer (..),
@@ -31,22 +34,26 @@ import           Armadillo.Test.CliCommand          (ChainFollowerStartup (..),
                                                      mkNodeClientConfig,
                                                      runCliCommand,
                                                      withHttpServer)
-import           Armadillo.Test.RunningKupo         (KupoLog (..), RunningKupo,
-                                                     withKupo)
+import           Armadillo.Test.RunningKupo         (KupoLog (..),
+                                                     RunningKupo (..), withKupo)
 import           Cardano.Api                        (AssetId, Quantity (..),
-                                                     TxIn)
+                                                     SlotNo (..), TxIn)
 import qualified Cardano.Api                        as C
+import           Control.Concurrent                 (threadDelay)
+import           Control.Monad                      (unless)
 import           Convex.Class                       (runMonadBlockchainCardanoNodeT,
                                                      sendTx)
 import           Convex.Devnet.CardanoNode          (NodeLog, RunningNode (..),
                                                      withCardanoNodeDevnet)
 import           Convex.Devnet.Logging              (Tracer, contramap,
-                                                     showLogsOnFailure)
+                                                     showLogsOnFailure,
+                                                     traceWith)
 import           Convex.Devnet.Utils                (failure, withTempDir)
 import           Convex.Devnet.WalletServer         (RunningWalletServer (..),
                                                      WalletLog, withWallet)
 import           Convex.MonadLog                    (runMonadLogIgnoreT)
 import           Convex.NodeClient.WaitForTxnClient (runMonadBlockchainWaitingT)
+import qualified Convex.NodeQueries                 as NodeQueries
 import           Convex.Wallet.Operator             (Operator, Signing,
                                                      operatorWalletID,
                                                      signTxOperator)
@@ -61,18 +68,19 @@ data TestLog =
   | TWallet WalletLog
   | TCli CliLog
   | TKupoLog KupoLog
+  | TWaitingForKupoSync{ nodeSlot :: SlotNo, kupoSlot :: SlotNo }
+  | TDumpUtxoSet ()
   deriving stock (Show, Generic)
   deriving anyclass (ToJSON, FromJSON)
 
 data DevEnv =
     DevEnv
-      { tracer              :: Tracer IO TestLog
-      , tempDir             :: FilePath
-      , node                :: RunningNode
-      , wallet              :: RunningWalletServer
-      , httpServer          :: RunningHttpServer
-      , walletClientOptions :: WalletClientOptions
-      , kupo                :: RunningKupo
+      { tracer     :: Tracer IO TestLog
+      , tempDir    :: FilePath
+      , node       :: RunningNode
+      , wallet     :: RunningWalletServer
+      , httpServer :: RunningHttpServer
+      , kupo       :: RunningKupo
       }
 
 {-| Set up a @DevEnv@ and tear it down after use.
@@ -83,23 +91,18 @@ withDevEnv action =
     withTempDir "armadillo" $ \tempDir -> do
       withCardanoNodeDevnet (contramap TNodeLog tracer) tempDir $ \node ->
         withWallet (contramap TWallet tracer) tempDir node $ \wallet -> do
-          _refScripts <- deployScripts (contramap TCli tracer) tempDir node walletClientOptions_ (rwsOpConfigSigning wallet)
           let kupoCfg = KupoConfig "localhost" 9999
-          withKupo (contramap TKupoLog tracer) tempDir node kupoCfg $ \kupo ->
-            withHttpServer (contramap TCli tracer) tempDir ServerConfig{scPort = 9088} (StartChainFollower tempDir node kupoCfg) $ \httpServer ->
-              action DevEnv{tracer, tempDir, node, wallet, walletClientOptions = walletClientOptions_, httpServer, kupo}
-
-walletClientOptions_ :: WalletClientOptions
-walletClientOptions_ =
-  WalletClientOptions
-    { wcoHost = "localhost"
-    , wcoPort = 9988 -- TODO: Magic number defined in Convex.Devnet.WalletServer. Export it there (as part of RunningWalletServer)
-    }
+          withKupo (contramap TKupoLog tracer) tempDir node kupoCfg $ \kupo -> do
+              withHttpServer (contramap TCli tracer) tempDir ServerConfig{scPort = 9088} (StartChainFollower tempDir node kupoCfg) $ \httpServer -> do
+                _refScripts <- deployScripts (contramap TCli tracer) tempDir node kupoCfg (rwsOpConfigSigning wallet)
+                let de = DevEnv{tracer, tempDir, node, wallet, httpServer, kupo}
+                waitForKupoSync de
+                action de
 
 createCurrency :: DevEnv -> String -> IO AssetId
-createCurrency DevEnv{tempDir, wallet=RunningWalletServer{rwsOpConfigSigning}, node, tracer, walletClientOptions} name = do
+createCurrency DevEnv{tempDir, wallet=RunningWalletServer{rwsOpConfigSigning}, node, tracer, kupo=RunningKupo{rkConfig}} name = do
   outFile <- emptyTempFile tempDir "script-hash"
-  runCliCommand (contramap TCli tracer) tempDir (Debug (mkNodeClientConfig node) (Just outFile) $ CreateCurrency walletClientOptions rwsOpConfigSigning name)
+  runCliCommand (contramap TCli tracer) tempDir (Debug (mkNodeClientConfig node) (Just outFile) $ CreateCurrency rkConfig rwsOpConfigSigning name)
   scriptHash <- readJSONFile outFile >>= either (error . (<>) ("Unable to read JSON file " <> outFile <> ": ")) pure
   pure $ C.AssetId (C.PolicyId scriptHash) (fromString name)
 
@@ -115,10 +118,21 @@ createPool devEnv@DevEnv{wallet=RunningWalletServer{rwsOperator}, node} (Fee fee
 
 {-| Make a deposit to a pool
 -}
-makeDeposit :: DevEnv -> AssetId -> AssetId -> Quantity -> IO ()
-makeDeposit DevEnv{httpServer, tempDir, wallet=RunningWalletServer{rwsOpConfigSigning}, node, tracer, walletClientOptions} assetX assetY q = do
-  outFile <- emptyTempFile tempDir "make-deposit"
-  runCliCommand (contramap TCli tracer) tempDir (Pool (mkNodeClientConfig node) (Just outFile) $ Deposit walletClientOptions rwsOpConfigSigning (rhApiOptions httpServer) assetX assetY q)
+makeDeposit :: DevEnv -> AssetId -> AssetId -> (Quantity, Quantity) -> IO (DepositOutput TxIn)
+makeDeposit devEnv@DevEnv{wallet=RunningWalletServer{rwsOperator}, node} assetX assetY (Quantity mdQuantityX, Quantity mdQuantityY) = do
+  let (mdPublicKeyHash, mdStakingCredential) = operatorWalletID rwsOperator
+      args =
+        MakeDepositArgs
+          { mdAssetX = Api.fromCardanoAssetId assetX
+          , mdAssetY = Api.fromCardanoAssetId assetY
+          , mdQuantityX
+          , mdQuantityY
+          , mdPublicKeyHash
+          , mdStakingCredential
+          }
+  (WrappedTx k, poolOut) <- runAPIRequest (Api.buildMakeDepositTx args) devEnv
+  _ <- signAndSubmitTx node rwsOperator k
+  pure poolOut
 
 {-| Call the chain follower API, failing on errors
 -}
@@ -136,3 +150,20 @@ signAndSubmitTx RunningNode{rnConnectInfo=(connectInfo, env)} operator t = do
         runMonadBlockchainWaitingT connectInfo env $ do
           sendTx (signTxOperator operator t)
   either (fail . (<>) "signAndSubmitTx: " . show @_) pure x
+
+waitForKupoSync :: DevEnv -> IO ()
+waitForKupoSync DevEnv{kupo=RunningKupo{rkClientEnv}, node=RunningNode{rnConnectInfo=(connectInfo, _env)}, tracer} = do
+  threadDelay 5_000_000
+  NodeQueries.queryTip connectInfo >>= \case
+    C.ChainPointAtGenesis -> fail "Unexpected genesis"
+    C.ChainPoint nodeSlot _ -> go nodeSlot
+
+  where
+    go nodeSlot = do
+      KupoHealth{most_recent_node_tip} <- Kupo.getKupoHealth rkClientEnv >>= either (fail . show) pure
+      let kupoSlot = C.SlotNo $ fromInteger most_recent_node_tip
+      unless (kupoSlot > nodeSlot) $ do
+        traceWith tracer $ TWaitingForKupoSync{nodeSlot, kupoSlot}
+        threadDelay 2_000_000
+        go nodeSlot
+

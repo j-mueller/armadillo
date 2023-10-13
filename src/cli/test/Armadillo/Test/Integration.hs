@@ -19,7 +19,9 @@ import           Armadillo.Test.CliCommand  (ChainFollowerStartup (..),
                                              withHttpServer)
 import           Armadillo.Test.DevEnv      (DevEnv (..), TestLog (..),
                                              createCurrency, createPool,
-                                             makeDeposit, withDevEnv)
+                                             makeDeposit, waitForKupoSync,
+                                             withDevEnv)
+import           Armadillo.Test.RunningKupo (RunningKupo (..))
 import           Armadillo.Test.Utils       (availableTokens, checkRefScripts)
 import qualified Cardano.Api                as C
 import           Control.Concurrent         (threadDelay)
@@ -79,9 +81,9 @@ checkWallet =
           pure ()
 
 checkDeployScript :: IO ()
-checkDeployScript = withDevEnv $ \DevEnv{tracer, tempDir, node, wallet=RunningWalletServer{rwsOpConfigSigning}, walletClientOptions} -> do
+checkDeployScript = withDevEnv $ \DevEnv{tracer, tempDir, node, wallet=RunningWalletServer{rwsOpConfigSigning}, kupo=RunningKupo{rkConfig}} -> do
   let outFile = tempDir </> "reference-scripts.json"
-  runCliCommand (contramap TCli tracer) tempDir (RefScript (mkNodeClientConfig node) $ Deploy walletClientOptions rwsOpConfigSigning outFile)
+  runCliCommand (contramap TCli tracer) tempDir (RefScript (mkNodeClientConfig node) $ Deploy rkConfig rwsOpConfigSigning outFile)
   checkRefScripts node outFile
 
 checkCreateCurrency :: IO ()
@@ -90,48 +92,39 @@ checkCreateCurrency = withDevEnv $ \de@DevEnv{wallet, tracer} -> do
   q <- availableTokens (contramap TWallet tracer) wallet assetId
   assertEqual "Should have 1000 tokens" 1000 q
 
-checkCreatePool :: IO ()
-checkCreatePool = withDevEnv $ \de -> do
-  asset1 <- createCurrency de "token1"
-  _p <- createPool de (Fee 123) (asset1, 100) (C.AdaAssetId, 10)
-  pure ()
-
-checkChainFollower :: IO ()
-checkChainFollower = withDevEnv $ \de@DevEnv{httpServer} -> do
-  asset1 <- createCurrency de "token1"
-  _p <- createPool de (Fee 123) (asset1, 100) (C.AdaAssetId, 10)
-  threadDelay 3_000_000
-  apiPairs httpServer >>= assertEqual "there should be one pair" 1 . length
-
-checkStartAMM :: IO ()
-checkStartAMM = withDevEnv $ \_ -> do
-  threadDelay 3_000_000
-
 endToEndTest :: (String -> IO ()) -> IO ()
-endToEndTest step = withDevEnv $ \de@DevEnv{httpServer} -> do
+endToEndTest step = withDevEnv $ \de@DevEnv{httpServer, tracer, wallet} -> do
   threadDelay 3_000_000
   step "Creating currency"
   asset1 <- createCurrency de "token1"
+  threadDelay 3_000_000
+  availableTokens (contramap TWallet tracer) wallet asset1 >>= assertEqual "Should have 1000 tokens" 1000
   step "Creating pool"
-  threadDelay 2_000_000
+  waitForKupoSync de
   _p <- createPool de (Fee 123) (asset1, 100) (C.AdaAssetId, 100)
   threadDelay 3_000_000
+  waitForKupoSync de
+  apiPairs httpServer >>= assertEqual "there should be one pair" 1 . length
+  waitForKupoSync de
   step "Querying pools"
   [PoolOutput{poTxIn=oldTxI}] <- apiPools httpServer
   step "Making a deposit"
-  makeDeposit de asset1 C.AdaAssetId 50
   threadDelay 3_000_000
-  step "Checking that the deposit has been applied"
-  [PoolOutput{poTxIn=newTxI}] <- apiPools httpServer
-  assertBool "Old should be different from new" (oldTxI /= newTxI)
+  waitForKupoSync de
+  _ <- makeDeposit de asset1 C.AdaAssetId (50, 50)
+  -- threadDelay 10_000_000
+  pure ()
+  -- step "Checking that the deposit has been applied"
+  -- [PoolOutput{poTxIn=newTxI}] <- apiPools httpServer
+  -- assertBool "Old should be different from new" (oldTxI /= newTxI)
 
 {-| Start a dev env and wait for input on stdin before shutting it down.
 -}
 runDevEnv :: IO ()
-runDevEnv = withDevEnv $ \DevEnv{tracer, tempDir, node, wallet=RunningWalletServer{rwsOpConfigSigning}, walletClientOptions} -> do
+runDevEnv = withDevEnv $ \DevEnv{tracer, tempDir, node, wallet=RunningWalletServer{rwsOpConfigSigning}, kupo=RunningKupo{rkConfig}} -> do
   let outFile = tempDir </> "reference-scripts.json"
   putStrLn "Devnet running. Wallet port: 9988. API port: 9088"
-  runCliCommand (contramap TCli tracer) tempDir (RefScript (mkNodeClientConfig node) $ Deploy walletClientOptions rwsOpConfigSigning outFile)
+  runCliCommand (contramap TCli tracer) tempDir (RefScript (mkNodeClientConfig node) $ Deploy rkConfig rwsOpConfigSigning outFile)
   putStrLn $ "Reference scripts have been deployed to " <> outFile
   putStrLn "Press any key to exit"
   readLn

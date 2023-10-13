@@ -15,7 +15,9 @@ module Armadillo.Kupo(
   -- * Config
   KupoConfig(..),
   parseKupoConfig,
-  kupoClientEnv
+  kupoClientEnv,
+  KupoHealth(..),
+  getKupoHealth,
 ) where
 
 import           Armadillo.Utils        (readAssetId)
@@ -44,7 +46,7 @@ import           Options.Applicative    (Parser, auto, help, long, option,
                                          strOption)
 import qualified Options.Applicative
 import           Servant.API            (Capture, Get, JSON, ToHttpApiData (..),
-                                         type (:>))
+                                         type (:>), (:<|>) (..))
 import           Servant.Client         (BaseUrl (..), ClientEnv, ClientError,
                                          Scheme (Http), client, mkClientEnv,
                                          runClientM)
@@ -92,12 +94,18 @@ data KupoOutput =
   deriving anyclass (ToJSON, FromJSON)
 
 type KupoAPI =
-  "matches" :> Capture "credential" KupoCredentialMatch :> Get '[JSON] [KupoOutput]
+  "health" :> Get '[JSON] KupoHealth
+  :<|> "matches" :> Capture "credential" KupoCredentialMatch :> Get '[JSON] [KupoOutput]
 
 getKupoMatches :: ClientEnv -> PaymentCredential -> IO (Either ClientError [KupoOutput])
 getKupoMatches clientEnv cred = do
-  let matches = client (Proxy @KupoAPI)
+  let _ :<|> matches = client (Proxy @KupoAPI)
   runClientM (matches $ KupoCredentialMatch cred) clientEnv
+
+getKupoHealth :: ClientEnv -> IO (Either ClientError KupoHealth)
+getKupoHealth clientEnv =
+  let health :<|> _ = client (Proxy @KupoAPI)
+  in runClientM health clientEnv
 
 data KupoConversionError =
   KupoConversionError
@@ -156,3 +164,13 @@ parseKupoConfig =
 kupoClientEnv :: HTTP.Manager -> KupoConfig -> ClientEnv
 kupoClientEnv manager KupoConfig{kcHost, kcPort} =
   mkClientEnv manager (BaseUrl Http kcHost kcPort "")
+
+data KupoHealth =
+  KupoHealth
+    { connection_status      :: Text
+    , most_recent_checkpoint :: Integer
+    , most_recent_node_tip   :: Integer
+    , version                :: Text
+    }
+  deriving stock (Show, Generic)
+  deriving anyclass (ToJSON, FromJSON)

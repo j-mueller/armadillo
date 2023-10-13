@@ -49,11 +49,11 @@ depositPairY DepositOutput{doCfg=D.DepositConfig{D.tokenB}, doTxOut} = do
   assetId <- liftEither (unTransAssetId tokenB)
   pure (assetId, C.selectAsset (txOutValue doTxOut) assetId)
 
-deposit :: (MonadBuildTx m, MonadError DEXBuildTxError m, MonadBlockchain m) => Scripts -> C.Hash C.PaymentKey -> Maybe (C.Hash C.StakeKey) -> PoolConfig -> Quantity -> m (DepositOutput ())
-deposit scripts verificationKey stakeKey cfg@PoolConfig{poolNft, poolX, poolY, poolLq} quantity = do
+deposit :: (MonadBuildTx m, MonadError DEXBuildTxError m, MonadBlockchain m) => Scripts -> C.Hash C.PaymentKey -> Maybe (C.Hash C.StakeKey) -> PoolConfig -> (Quantity, Quantity) -> m (DepositOutput ())
+deposit scripts verificationKey stakeKey cfg@PoolConfig{poolNft, poolX, poolY, poolLq} quantities = do
   n <- networkId
   protParams <- queryProtocolParameters
-  value <- mapError CardanoApiError (depositValue cfg quantity)
+  value <- mapError CardanoApiError (depositValue cfg quantities)
   let depositCfg0 =
         D.DepositConfig
           { D.poolNft = poolNft
@@ -74,8 +74,8 @@ deposit scripts verificationKey stakeKey cfg@PoolConfig{poolNft, poolX, poolY, p
 
 {-| The @cardano-api@ value containing the tokens to be deposited to a liquidity pool.
 -}
-depositValue :: MonadError C.SerialiseAsRawBytesError m => PoolConfig -> Quantity -> m Value
-depositValue PoolConfig{poolX, poolY} quantity = do
+depositValue :: MonadError C.SerialiseAsRawBytesError m => PoolConfig -> (Quantity, Quantity) -> m Value
+depositValue PoolConfig{poolX, poolY} (quantityX, quantityY) = do
   aX <- liftEither (unTransAssetId poolX)
   aY <- liftEither (unTransAssetId poolY)
 
@@ -83,7 +83,7 @@ depositValue PoolConfig{poolX, poolY} quantity = do
   -- because the deposit validator only allows 2 inputs (so we can't have)
   -- a 3rd Ada-only input)
   let minAda = C.Lovelace 10_000_000
-  pure $ C.valueFromList [(aX, quantity), (aY, quantity)] <> C.lovelaceToValue minAda
+  pure $ C.valueFromList [(aX, quantityX), (aY, quantityY)] <> C.lovelaceToValue minAda
 
 {-| The tx output for a token deposit
 -}

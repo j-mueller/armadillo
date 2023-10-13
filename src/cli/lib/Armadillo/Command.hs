@@ -15,6 +15,7 @@ module Armadillo.Command(
   localCreatePool,
   createToken,
   makeDeposit,
+  localMakeDeposit,
   applyDeposit,
   makeRedemption,
   applyRedemption
@@ -28,6 +29,8 @@ import           Armadillo.BuildTx                  (DEXBuildTxError,
                                                      ReferenceScripts,
                                                      initialLiquidity)
 import qualified Armadillo.BuildTx                  as BuildTx
+import           Armadillo.Kupo                     (KupoUtxoQueryT,
+                                                     runKupoUtxoQueryT)
 import           Armadillo.Scripts                  (Scripts)
 import           Cardano.Api                        (AssetId, AssetName,
                                                      CardanoMode, Env,
@@ -51,10 +54,8 @@ import           Convex.NodeClient.WaitForTxnClient (MonadBlockchainWaitingT,
 import qualified Convex.PlutusLedger                as PL
 import           Convex.Query                       (BalanceAndSubmitError,
                                                      MonadUtxoQuery,
-                                                     WalletAPIQueryT,
                                                      balanceAndSubmitOperator,
                                                      balanceOperator,
-                                                     runWalletAPIQueryT,
                                                      signAndSubmitOperator,
                                                      utxosByPayment)
 import           Convex.Utils                       (mapError, txnUtxos)
@@ -71,14 +72,14 @@ import           GHC.Generics                       (Generic)
 import           Servant.Client                     (ClientEnv)
 
 
-runBlockchainAction :: Functor m => LocalNodeConnectInfo CardanoMode -> Env -> ClientEnv -> MonadBlockchainWaitingT (MonadBlockchainCardanoNodeT TxCommandError (WalletAPIQueryT (ExceptT TxCommandError m))) a -> m (Either (MonadBlockchainError TxCommandError) a)
+runBlockchainAction :: Functor m => LocalNodeConnectInfo CardanoMode -> Env -> ClientEnv -> MonadBlockchainWaitingT (MonadBlockchainCardanoNodeT TxCommandError (KupoUtxoQueryT (ExceptT TxCommandError m))) a -> m (Either (MonadBlockchainError TxCommandError) a)
 runBlockchainAction connectInfo nodeEnv env action =
   let mapErr (Left err)         = Left (MonadBlockchainError err) -- FIXME: This needs to be fixed in MonadBlockchainCardanoNodeT!
       mapErr (Right (Left err)) = Left err
       mapErr (Right (Right x))  = Right x
   in fmap mapErr
       $ runExceptT
-      $ runWalletAPIQueryT env
+      $ runKupoUtxoQueryT env
         $ runMonadBlockchainCardanoNodeT connectInfo
           $ runMonadBlockchainWaitingT connectInfo nodeEnv action
 
@@ -87,6 +88,7 @@ data TxCommandError =
   | BalanceSubmitFailed BalanceAndSubmitError
   | NoSuitableInputFound PaymentCredential
   | BuildTxError DEXBuildTxError
+  | NoSuitablePoolFound C.AssetId C.AssetId
   deriving (Show)
 
 deployRefScripts ::
@@ -156,12 +158,20 @@ createToken operator name quantity = do
   x <- mapError BalanceSubmitFailed (balanceAndSubmitOperator operator Nothing (btx emptyTx))
   pure (x, scriptHash)
 
-makeDeposit :: (MonadUtxoQuery m, MonadBlockchain m, MonadError TxCommandError m) => Scripts -> Operator Signing -> PoolConfig -> Quantity -> m (DepositOutput TxIn)
-makeDeposit scripts operator poolCfg quantity = do
+{-| Build a (balanced, unsigned) transaction that makes a deposit
+-}
+makeDeposit :: (MonadUtxoQuery m, MonadBlockchain m, MonadError TxCommandError m) => Scripts -> C.Hash C.PaymentKey -> Maybe (C.Hash C.StakeKey) -> PoolConfig -> (Quantity, Quantity) -> m (C.Tx C.BabbageEra, DepositOutput TxIn)
+makeDeposit scripts paymentKey stakeKey poolCfg quantities = do
+  (out, btx) <- runBuildTxT $ mapError BuildTxError $ BuildTx.deposit scripts paymentKey stakeKey poolCfg quantities
+  tx <- mapError BalanceSubmitFailed (balanceOperator (C.PaymentCredentialByKey paymentKey) Nothing (btx emptyTx))
+  pure (tx, out $> fst (head (txnUtxos tx)))
+
+localMakeDeposit :: (MonadUtxoQuery m, MonadBlockchain m, MonadError TxCommandError m) => Scripts -> Operator Signing -> PoolConfig -> Quantity -> m (DepositOutput TxIn)
+localMakeDeposit scripts operator poolCfg quantity = do
   let pkh = C.verificationKeyHash $ verificationKey $ oPaymentKey operator
-  (out, btx) <- runBuildTxT $ mapError BuildTxError $ BuildTx.deposit scripts pkh Nothing poolCfg quantity
-  tx <- mapError BalanceSubmitFailed (balanceAndSubmitOperator operator Nothing (btx emptyTx))
-  pure $ out $> fst (head (txnUtxos tx))
+  (tx, txOut) <- makeDeposit scripts pkh Nothing poolCfg (quantity, quantity)
+  _finalTx <- mapError BalanceSubmitFailed (signAndSubmitOperator operator tx)
+  pure txOut
 
 applyDeposit :: (MonadUtxoQuery m, MonadBlockchain m, MonadError TxCommandError m) => ReferenceScripts TxIn -> Scripts -> Operator Signing -> DepositOutput TxIn -> PoolOutput TxIn -> m (PoolOutput TxIn)
 applyDeposit refScripts scripts operator deposit pool = do

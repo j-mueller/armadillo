@@ -12,7 +12,8 @@ import qualified Armadillo.BuildTx              as BuildTx
 import           Armadillo.Command              (CreatePoolParams (..),
                                                  applyDeposit, applyRedemption,
                                                  deployRefScripts,
-                                                 localCreatePool, makeDeposit,
+                                                 localCreatePool,
+                                                 localMakeDeposit,
                                                  makeRedemption)
 import qualified Armadillo.Test.Scripts         as Scripts
 import           Armadillo.Test.Utils           (checkRefScriptsUTxO,
@@ -109,7 +110,7 @@ depositLQ :: (MonadMockchain m, MonadUtxoQuery m, MonadFail m, MonadIO m) => Poo
 depositLQ PoolOutput{poConfig} = failOnError $ do
   _ <- payToOperator Wallet.w2 testOperator
   scripts <- loadScripts
-  makeDeposit scripts testOperator poConfig 10
+  localMakeDeposit scripts testOperator poConfig 10
 
 deployRefScriptsTest :: (MonadMockchain m, MonadUtxoQuery m, MonadFail m, MonadIO m) => m ()
 deployRefScriptsTest = do

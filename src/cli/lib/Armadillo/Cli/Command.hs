@@ -7,19 +7,15 @@ module Armadillo.Cli.Command(
   Command(..),
   ServerConfig(..),
   RefScriptCommand(..),
-  PoolCommand(..),
   Fee(..),
   parseCommand,
   DebugCommand(..),
   NodeClientStateFile(..),
-  ApiClientOptions(..),
-  apiClientEnv,
 ) where
 
 import           Armadillo.Kupo         (KupoConfig, parseKupoConfig)
-import           Armadillo.Utils        (readAssetId)
-import           Cardano.Api            (AssetId, CardanoMode, ChainPoint, Env,
-                                         LocalNodeConnectInfo, Quantity (..))
+import           Cardano.Api            (CardanoMode, ChainPoint, Env,
+                                         LocalNodeConnectInfo)
 import qualified Cardano.Api            as C
 import           Control.Monad.Except   (runExceptT)
 import qualified Convex.NodeQueries     as Node
@@ -30,10 +26,9 @@ import           Data.String            (IsString (..))
 import qualified Data.Text              as Text
 import qualified Network.HTTP.Client    as HTTP
 import           Options.Applicative    (CommandFields, Mod, Parser, ReadM,
-                                         auto, command, eitherReader, fullDesc,
-                                         help, info, long, many, metavar,
-                                         option, optional, progDesc, str,
-                                         strOption, subparser, value)
+                                         auto, command, fullDesc, help, info,
+                                         long, many, metavar, option, optional,
+                                         progDesc, str, strOption, subparser)
 import           Servant.Client         (BaseUrl (..), ClientEnv, Scheme (Http),
                                          mkClientEnv)
 import           System.Exit            (exitFailure)
@@ -80,7 +75,6 @@ data Command =
   StartServer{serverConfig :: ServerConfig, nodeClientConfig :: Maybe (NodeClientConfig, NodeClientStateFile, KupoConfig, [ChainPoint]) } -- ^ Serve the API
   | WriteAPIFile{filePath :: FilePath } -- ^ Write the API to a file
   | RefScript NodeClientConfig RefScriptCommand
-  | Pool NodeClientConfig (Maybe FilePath) PoolCommand
   | Debug NodeClientConfig (Maybe FilePath) DebugCommand -- ^ Debug command with an output file
 
 data ServerConfig =
@@ -96,7 +90,6 @@ parseCommand =
       [ startServer
       , writeApi
       , referenceScripts
-      , poolCom
       , debugCom
       ]
 
@@ -124,18 +117,12 @@ parseServerConfig =
   ServerConfig
     <$> option auto (long "http.port" <> help "Port for the HTTP server")
 
-parseWalletClientOptions :: Parser WalletClientOptions
-parseWalletClientOptions =
-  WalletClientOptions
-    <$> strOption (long "wallet.host" <> value "localhost" <> help "Wallet server host")
-    <*> option auto (long "wallet.port" <> value 9988 <> help "Wallet server port")
-
 parseAPIFile :: Parser FilePath
 parseAPIFile =
   strOption (long "api.file" <> help "The JSON file where the API documentation should be written")
 
 data RefScriptCommand =
-  Deploy WalletClientOptions OperatorConfigSigning FilePath
+  Deploy KupoConfig OperatorConfigSigning FilePath
   | Check
 
 parseRefScriptCommand :: Parser RefScriptCommand
@@ -146,7 +133,7 @@ parseRefScriptCommand = subparser $ mconcat
 
 refScriptDeploy :: Mod CommandFields RefScriptCommand
 refScriptDeploy = command "deploy" $
-  info (Deploy <$> parseWalletClientOptions <*> parseOperatorConfigSigning <*> parseOutFile) (fullDesc <> progDesc "Deploy the reference scripts")
+  info (Deploy <$> parseKupoConfig <*> parseOperatorConfigSigning <*> parseOutFile) (fullDesc <> progDesc "Deploy the reference scripts")
 
 refScriptCheck :: Mod CommandFields RefScriptCommand
 refScriptCheck = command "check" $
@@ -162,36 +149,15 @@ parseOutFile =
 newtype Fee = Fee Integer
   deriving stock (Eq, Ord, Show)
 
-data PoolCommand =
-  Deposit WalletClientOptions OperatorConfigSigning ApiClientOptions AssetId AssetId Quantity
-  deriving stock (Eq, Show)
-
-parseAssetId :: String -> Parser AssetId
-parseAssetId x = option (eitherReader $ readAssetId ':') (long ("pool." <> x <> ".assetID") <> help "Asset ID")
-
-parseQuantity :: Parser Quantity
-parseQuantity =
-  Quantity <$> option auto (long "quantity" <> value 50 <> help "Amount of tokens")
-
-poolCom :: Mod CommandFields Command
-poolCom = command "pool" $
-  info (Pool <$> parseNodeClientConfig <*> optional parseDebugOutFile <*> parsePoolCommand) (fullDesc <> progDesc "Manage liquidity pools")
-
-parsePoolCommand :: Parser PoolCommand
-parsePoolCommand = subparser $ mconcat [poolDeposit]
-
-poolDeposit :: Mod CommandFields PoolCommand
-poolDeposit = command "deposit" $ info (Deposit <$> parseWalletClientOptions <*> parseOperatorConfigSigning <*> parseApiClientOptions <*> parseAssetId "x" <*> parseAssetId "y" <*> parseQuantity) (fullDesc <> progDesc "Make a deposit to a pool")
-
 data DebugCommand =
-  CreateCurrency WalletClientOptions OperatorConfigSigning String -- ^ Create a currency with the given name
+  CreateCurrency KupoConfig OperatorConfigSigning String -- ^ Create a currency with the given name
 
 debugCom :: Mod CommandFields Command
 debugCom = command "debug" $
   info (Debug <$> parseNodeClientConfig <*> optional parseDebugOutFile <*> subparser createCurrency) (fullDesc <> progDesc "Debugging tools")
 
 createCurrency :: Mod CommandFields DebugCommand
-createCurrency = command "create-currency" $ info (CreateCurrency <$> parseWalletClientOptions <*> parseOperatorConfigSigning <*> parseCurrencyName) (fullDesc <> progDesc "The name of the currency")
+createCurrency = command "create-currency" $ info (CreateCurrency <$> parseKupoConfig <*> parseOperatorConfigSigning <*> parseCurrencyName) (fullDesc <> progDesc "The name of the currency")
 
 parseCurrencyName :: Parser String
 parseCurrencyName =
@@ -217,22 +183,3 @@ parseChainPoint = option rd (long "chain-point" <> metavar "BLOCKID:SLOTNO" <> h
                   (readMaybe blockString)
         pure $ C.ChainPoint slot hash
       _ -> fail "Expected: <64-digit hash>:<slot number>"
-
-{-| Options for the wallet server
--}
-data ApiClientOptions =
-  ApiClientOptions
-    { acoHost :: String
-    , acoPort :: Int
-    }
-  deriving stock (Eq, Show)
-
-parseApiClientOptions :: Parser ApiClientOptions
-parseApiClientOptions =
-  ApiClientOptions
-    <$> strOption (long "api.host" <> value "localhost" <> help "API server host")
-    <*> option auto (long "api.port" <> value 9088 <> help "API server port")
-
-apiClientEnv :: HTTP.Manager -> ApiClientOptions -> ClientEnv
-apiClientEnv manager ApiClientOptions{acoHost, acoPort} =
-  mkClientEnv manager (BaseUrl Http acoHost acoPort "")
