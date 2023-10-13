@@ -36,6 +36,11 @@ module Armadillo.BuildTx(
   redeem,
   applyRedemption,
 
+  -- * Making swaps
+  SwapOutput(..),
+  SwapParams(..),
+  swap,
+
   -- * Etc.
   poolValue,
   mintToken
@@ -62,6 +67,8 @@ import           Armadillo.BuildTx.Pool          (PoolInflows (..),
 import           Armadillo.BuildTx.Redeem        (RedeemOutput (..),
                                                   amountRedeemed, redeem,
                                                   redeemReturnOutput)
+import           Armadillo.BuildTx.Swap          (SwapOutput (..),
+                                                  SwapParams (..), swap)
 import           Armadillo.BuildTx.Types         (DEXBuildTxError (..),
                                                   ReferenceScripts (..),
                                                   deployReferenceScripts,

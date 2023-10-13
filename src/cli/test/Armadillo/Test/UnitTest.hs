@@ -7,19 +7,22 @@ module Armadillo.Test.UnitTest(
 
 import           Armadillo.BuildTx              (DepositOutput (..),
                                                  PoolLiquidityToken (..),
-                                                 PoolNFT (..), PoolOutput (..))
+                                                 PoolNFT (..), PoolOutput (..),
+                                                 SwapOutput (..),
+                                                 SwapParams (..))
 import qualified Armadillo.BuildTx              as BuildTx
 import           Armadillo.Command              (CreatePoolParams (..),
+                                                 TxCommandError (BalanceSubmitFailed),
                                                  applyDeposit, applyRedemption,
                                                  deployRefScripts,
                                                  localCreatePool,
                                                  localMakeDeposit,
-                                                 makeRedemption)
+                                                 makeRedemption, makeSwap)
 import qualified Armadillo.Test.Scripts         as Scripts
 import           Armadillo.Test.Utils           (checkRefScriptsUTxO,
                                                  loadScripts)
-import           Cardano.Api                    (AssetName, PolicyId, TxIn,
-                                                 Value)
+import           Cardano.Api                    (AssetId, AssetName, PolicyId,
+                                                 TxIn, Value)
 import qualified Cardano.Api                    as C
 import           Control.Lens                   (view)
 import qualified Control.Lens                   as L
@@ -39,8 +42,9 @@ import qualified Convex.MockChain.Defaults      as Defaults
 import           Convex.MockChain.Utils         (mockchainSucceeds)
 import           Convex.Query                   (MonadUtxoQuery (..),
                                                  balanceAndSubmitOperator,
-                                                 selectOperatorUTxO)
-import           Convex.Utils                   (txnUtxos)
+                                                 selectOperatorUTxO,
+                                                 signAndSubmitOperator)
+import           Convex.Utils                   (mapError, txnUtxos)
 import           Convex.Wallet                  (Wallet)
 import qualified Convex.Wallet.MockWallet       as Wallet
 import           Convex.Wallet.Operator         (Operator (..),
@@ -59,10 +63,14 @@ tests = testGroup "emulator"
   [ testCase "create LQ pool NFT" (mockchainSucceeds createLQPoolNft)
   , testCase "create LQ pool liquidity" (mockchainSucceeds createLQPoolLiquidity)
   , testCase "create LQ pool" (mockchainSucceeds createLQPool)
-  , testCase "make a deposit" (mockchainSucceeds (createLQPool >>= depositLQ))
+  , testCase "make a deposit" (mockchainSucceeds (createLQPool >>= depositLQ . snd))
+  , testCase "make a swap" $ mockchainSucceeds $ do
+      (assets, pool) <- createLQPool
+      swapLP assets pool
   , testCase "deploy ref scripts" (mockchainSucceeds deployRefScriptsTest)
   , testCase "apply a deposit" (mockchainSucceeds applyDepositTest)
   , testCase "make a redemption" (mockchainSucceeds redeemTest)
+
   ]
 
 createLQPoolNft :: (MonadIO m, MonadMockchain m, MonadUtxoQuery m, MonadFail m) => m (C.Tx C.BabbageEra, (PolicyId, AssetName))
@@ -86,7 +94,7 @@ createLQPoolLiquidity = do
   (PoolLiquidityToken{pltAsset}, buildTx) <- failOnError (runBuildTxT (BuildTx.createPoolLiquidityToken (fst utxo) 10_000))
   runExceptT (balanceAndSubmitOperator testOperator Nothing (buildTx emptyTx)) >>= either (fail . show) (pure . (,pltAsset))
 
-createLQPool :: (MonadIO m, MonadUtxoQuery m, MonadMockchain m, MonadFail m) => m (PoolOutput TxIn)
+createLQPool :: (MonadIO m, MonadUtxoQuery m, MonadMockchain m, MonadFail m) => m ((AssetId, AssetId), PoolOutput TxIn)
 createLQPool = failOnError $ do
   scripts <- loadScripts
   _ <- payToOperator Wallet.w2 testOperator
@@ -104,13 +112,35 @@ createLQPool = failOnError $ do
   let nftAssetId = BuildTx.poolNftAssetId poConfig
       vl = BuildTx.poolValue po
   liftIO $ assertEqual "Should have pool NFT" 1 (C.selectAsset vl nftAssetId)
-  pure po
+  pure ((fst pair1, fst pair2), po)
 
 depositLQ :: (MonadMockchain m, MonadUtxoQuery m, MonadFail m, MonadIO m) => PoolOutput TxIn -> m (DepositOutput TxIn)
 depositLQ PoolOutput{poConfig} = failOnError $ do
   _ <- payToOperator Wallet.w2 testOperator
   scripts <- loadScripts
   localMakeDeposit scripts testOperator poConfig 10
+
+swapLP :: (MonadMockchain m, MonadUtxoQuery m, MonadFail m, MonadIO m) => (AssetId, AssetId) -> PoolOutput TxIn -> m (SwapOutput TxIn)
+swapLP (assetA, assetB) PoolOutput{poConfig} = failOnError $ do
+  _ <- payToOperator Wallet.w2 testOperator
+  scripts <- loadScripts
+  let (spRewardPkh, spStakePkh) =
+        let Operator{oPaymentKey, oStakeKey} = testOperator
+        in (C.verificationKeyHash $ verificationKey oPaymentKey, fmap C.verificationKeyHash oStakeKey)
+      params =
+        SwapParams
+          { spBase = assetA
+          , spQuote = assetB
+          , spExFeePerTokenNum = 1
+          , spExFeePerTokenDen = 100
+          , spRewardPkh
+          , spStakePkh
+          , spBaseAmount = 20
+          , spMinQuoteAmount = 1
+          }
+  (tx, txo) <- makeSwap scripts poConfig params
+  _ <- mapError BalanceSubmitFailed (signAndSubmitOperator testOperator tx)
+  pure txo
 
 deployRefScriptsTest :: (MonadMockchain m, MonadUtxoQuery m, MonadFail m, MonadIO m) => m ()
 deployRefScriptsTest = do
@@ -125,7 +155,7 @@ applyDepositTest = do
   _ <- payToOperator Wallet.w2 testOperator
   _ <- payToOperator Wallet.w2 testOperator
   scripts <- loadScripts
-  pool <- createLQPool
+  (_, pool) <- createLQPool
   deposit <- depositLQ pool
   refScripts <- failOnError (deployRefScripts scripts testOperator)
   void (failOnError (applyDeposit refScripts scripts testOperator deposit pool))
@@ -135,7 +165,7 @@ redeemTest = do
   _ <- payToOperator Wallet.w2 testOperator
   _ <- payToOperator Wallet.w2 testOperator
   scripts <- loadScripts
-  pool <- createLQPool
+  (_, pool) <- createLQPool
   deposit <- depositLQ pool
   refScripts <- failOnError (deployRefScripts scripts testOperator)
   newPool <- failOnError (applyDeposit refScripts scripts testOperator deposit pool)

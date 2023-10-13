@@ -18,7 +18,8 @@ module Armadillo.Command(
   localMakeDeposit,
   applyDeposit,
   makeRedemption,
-  applyRedemption
+  applyRedemption,
+  makeSwap
 ) where
 
 import           Armadillo.BuildTx                  (DEXBuildTxError,
@@ -27,6 +28,8 @@ import           Armadillo.BuildTx                  (DEXBuildTxError,
                                                      PoolState (..),
                                                      RedeemOutput (..),
                                                      ReferenceScripts,
+                                                     SwapOutput,
+                                                     SwapParams (..),
                                                      initialLiquidity)
 import qualified Armadillo.BuildTx                  as BuildTx
 import           Armadillo.Kupo                     (KupoUtxoQueryT,
@@ -195,3 +198,12 @@ applyRedemption refScripts scripts operator deposit pool = do
 {-| Select a single UTxO that is locked by the payment credential. |-}
 selectCredentialUtxo :: MonadUtxoQuery m => PaymentCredential -> m (Maybe (C.TxIn, C.TxOut C.CtxUTxO C.BabbageEra))
 selectCredentialUtxo = fmap (listToMaybe . Map.toList . C.unUTxO) . utxosByPayment
+
+{-| Build a transaction for a swap
+-}
+makeSwap :: (MonadUtxoQuery m, MonadBlockchain m, MonadError TxCommandError m) => Scripts -> PoolConfig -> SwapParams -> m (C.Tx C.BabbageEra, SwapOutput TxIn)
+makeSwap scripts poolCfg swapParams = do
+  let r = spRewardPkh swapParams
+  (out, btx) <- runBuildTxT $ mapError BuildTxError $ BuildTx.swap scripts poolCfg swapParams
+  tx <- mapError BalanceSubmitFailed (balanceOperator (C.PaymentCredentialByKey r) Nothing (btx emptyTx))
+  pure (tx, out $> fst (head (txnUtxos tx)))

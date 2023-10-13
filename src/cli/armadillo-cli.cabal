@@ -68,6 +68,7 @@ library
     Armadillo.BuildTx.Deposit
     Armadillo.BuildTx.Pool
     Armadillo.BuildTx.Redeem
+    Armadillo.BuildTx.Swap
     Armadillo.BuildTx.Types
     Armadillo.ChainFollower.DepositState
     Armadillo.ChainFollower.PoolState
