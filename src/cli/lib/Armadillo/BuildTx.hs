@@ -40,6 +40,7 @@ module Armadillo.BuildTx(
   SwapOutput(..),
   SwapParams(..),
   swap,
+  applySwap,
 
   -- * Etc.
   poolValue,
@@ -81,7 +82,7 @@ import           Cardano.Api                     (AssetName, NetworkId,
                                                   TxIn)
 import qualified Cardano.Api                     as C
 import qualified Cardano.Api.Shelley             as C
-import           Control.Monad.Except            (MonadError)
+import           Control.Monad.Except            (MonadError, throwError)
 import           Convex.BuildTx                  (MonadBuildTx, mintPlutusV2,
                                                   prependTxOut,
                                                   setMinAdaDepositAll,
@@ -192,6 +193,24 @@ applyRedemption ReferenceScripts{refScriptPool, refScriptRedeem} scripts@Scripts
   let opRewardOut = operatorRewardOutput n op (Quantity exFee)
 
   pure (newPoolOutput, opRewardOut)
+
+applySwap :: (MonadBuildTx m, MonadBlockchain m, MonadError DEXBuildTxError m) => ReferenceScripts TxIn -> Scripts -> Operator k -> SwapOutput TxIn -> PoolOutput TxIn -> m (PoolOutput (), C.TxOut C.CtxTx C.BabbageEra)
+applySwap ReferenceScripts{refScriptPool, refScriptSwap} Scripts{sPoolValidator, sSwapValidator} _op SwapOutput{swoTxIn} PoolOutput{poTxIn} = do
+  (_n, p) <- (,) <$> networkId <*> queryProtocolParameters
+  let preIns = Set.fromList [swoTxIn, poTxIn]
+      orderIx = fromIntegral $ Set.findIndex swoTxIn preIns
+      poolIx = fromIntegral $ Set.findIndex poTxIn preIns
+      poolRed   = Pool.PoolRedeemer{Pool.action = Pool.Swap, Pool.selfIx = 0}
+      orderRedeemer = Order.OrderRedeemer{Order.poolInIx = poolIx, Order.orderInIx = orderIx, Order.rewardOutIx = 1, Order.action = Order.Apply}
+
+  spendPlutusV2RefWithInlineDatum swoTxIn refScriptSwap (Just $ fst sSwapValidator) orderRedeemer
+  spendPlutusV2RefWithInlineDatum poTxIn refScriptPool (Just $ fst sPoolValidator) poolRed
+
+  setMinAdaDepositAll p
+  -- let opRewardOut = operatorRewardOutput n op 0 -- FIXME: Compute rewards (Quantity exFee)
+
+  throwError NotImplemented
+
 
 rewardOutput :: NetworkId -> PoolConfig -> DepositConfig -> RewardsAndChange -> C.TxOut C.CtxTx C.BabbageEra
 rewardOutput n poolCfg D.DepositConfig{D.rewardPkh, D.stakePkh} RewardsAndChange{rewards, changeX, changeY} =

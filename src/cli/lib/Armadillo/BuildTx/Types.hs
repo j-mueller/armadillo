@@ -34,6 +34,7 @@ data ReferenceScripts i =
 data DEXBuildTxError =
   BuildTxScriptError CardanoApiScriptError
   | CardanoApiError C.SerialiseAsRawBytesError
+  | NotImplemented
   deriving Show
 
 {-| Deploy the reference scripts

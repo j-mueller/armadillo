@@ -1,0 +1,1344 @@
+{
+    "components": {
+        "schemas": {
+            "Action": {
+                "enum": [
+                    "Swap",
+                    "Harvest",
+                    "AddLiquidity",
+                    "Withdraw"
+                ],
+                "type": "string"
+            },
+            "AssetListEntry": {
+                "properties": {
+                    "pair": {
+                        "type": "string"
+                    },
+                    "pairLPFee": {
+                        "format": "double",
+                        "type": "number"
+                    },
+                    "pairLiquditity": {
+                        "format": "double",
+                        "type": "number"
+                    },
+                    "pairTVL": {
+                        "$ref": "#/components/schemas/Statistic"
+                    },
+                    "pairVolatility": {
+                        "format": "double",
+                        "type": "number"
+                    },
+                    "pairVolume": {
+                        "$ref": "#/components/schemas/Statistic"
+                    }
+                },
+                "required": [
+                    "pair",
+                    "pairVolume",
+                    "pairTVL",
+                    "pairLPFee",
+                    "pairVolatility",
+                    "pairLiquditity"
+                ],
+                "type": "object"
+            },
+            "BuySell": {
+                "enum": [
+                    "Buy",
+                    "Sell"
+                ],
+                "type": "string"
+            },
+            "CreatePoolArgs": {
+                "properties": {
+                    "cpoAssetX": {
+                        "type": "string"
+                    },
+                    "cpoAssetY": {
+                        "type": "string"
+                    },
+                    "cpoFeeNumerator": {
+                        "type": "integer"
+                    },
+                    "cpoPublicKeyHash": {
+                        "type": "string"
+                    },
+                    "cpoQuantityX": {
+                        "type": "integer"
+                    },
+                    "cpoQuantityY": {
+                        "type": "integer"
+                    },
+                    "cpoStakingCredential": {
+                        "type": "string"
+                    }
+                },
+                "required": [
+                    "cpoAssetX",
+                    "cpoAssetY",
+                    "cpoQuantityX",
+                    "cpoQuantityY",
+                    "cpoFeeNumerator",
+                    "cpoPublicKeyHash"
+                ],
+                "type": "object"
+            },
+            "DexTimeseriesPoint": {
+                "properties": {
+                    "dexTVL": {
+                        "$ref": "#/components/schemas/Statistic"
+                    },
+                    "dexVolume": {
+                        "$ref": "#/components/schemas/Statistic"
+                    }
+                },
+                "required": [
+                    "dexVolume",
+                    "dexTVL"
+                ],
+                "type": "object"
+            },
+            "FarmAssetData": {
+                "properties": {
+                    "alreadyHarvested": {
+                        "format": "double",
+                        "type": "number"
+                    },
+                    "emissionsPercent": {
+                        "format": "double",
+                        "type": "number"
+                    },
+                    "farmAPR": {
+                        "format": "double",
+                        "type": "number"
+                    },
+                    "farmTotalStaked": {
+                        "format": "double",
+                        "type": "number"
+                    },
+                    "pendingDistributionTotal": {
+                        "format": "double",
+                        "type": "number"
+                    }
+                },
+                "required": [
+                    "pendingDistributionTotal",
+                    "alreadyHarvested",
+                    "farmAPR",
+                    "farmTotalStaked",
+                    "emissionsPercent"
+                ],
+                "type": "object"
+            },
+            "FarmEntry": {
+                "properties": {
+                    "apr": {
+                        "format": "double",
+                        "type": "number"
+                    },
+                    "dailyEmissions": {
+                        "format": "double",
+                        "type": "number"
+                    },
+                    "totalStaked": {
+                        "format": "double",
+                        "type": "number"
+                    }
+                },
+                "required": [
+                    "totalStaked",
+                    "dailyEmissions",
+                    "apr"
+                ],
+                "type": "object"
+            },
+            "HistoricPairData": {
+                "properties": {
+                    "marketCap": {
+                        "$ref": "#/components/schemas/Statistic"
+                    },
+                    "price": {
+                        "$ref": "#/components/schemas/Statistic"
+                    }
+                },
+                "required": [
+                    "price",
+                    "marketCap"
+                ],
+                "type": "object"
+            },
+            "LBEArgs": {
+                "properties": {
+                    "lbeInitialLiqudityX": {
+                        "format": "double",
+                        "type": "number"
+                    },
+                    "lbeInitialLiqudityY": {
+                        "format": "double",
+                        "type": "number"
+                    },
+                    "lbePair": {
+                        "$ref": "#/components/schemas/Pair"
+                    }
+                },
+                "required": [
+                    "lbePair",
+                    "lbeInitialLiqudityX",
+                    "lbeInitialLiqudityY"
+                ],
+                "type": "object"
+            },
+            "LBEResponse": {
+                "properties": {
+                    "estimatedLPPool": {
+                        "format": "double",
+                        "type": "number"
+                    },
+                    "estimatedTEDYPrice": {
+                        "format": "double",
+                        "type": "number"
+                    }
+                },
+                "required": [
+                    "estimatedLPPool",
+                    "estimatedTEDYPrice"
+                ],
+                "type": "object"
+            },
+            "MakeDepositArgs": {
+                "properties": {
+                    "mdAssetX": {
+                        "type": "string"
+                    },
+                    "mdAssetY": {
+                        "type": "string"
+                    },
+                    "mdPublicKeyHash": {
+                        "type": "string"
+                    },
+                    "mdQuantityX": {
+                        "type": "integer"
+                    },
+                    "mdQuantityY": {
+                        "type": "integer"
+                    },
+                    "mdStakingCredential": {
+                        "type": "string"
+                    }
+                },
+                "required": [
+                    "mdAssetX",
+                    "mdAssetY",
+                    "mdQuantityX",
+                    "mdQuantityY",
+                    "mdPublicKeyHash"
+                ],
+                "type": "object"
+            },
+            "Pair": {
+                "properties": {
+                    "assetIdX": {
+                        "type": "string"
+                    },
+                    "assetIdY": {
+                        "type": "string"
+                    },
+                    "pairID": {
+                        "type": "string"
+                    }
+                },
+                "required": [
+                    "assetIdX",
+                    "assetIdY",
+                    "pairID"
+                ],
+                "type": "object"
+            },
+            "PairTimeseriesPoint": {
+                "properties": {
+                    "pricePoint": {
+                        "$ref": "#/components/schemas/Statistic"
+                    },
+                    "volumePoint": {
+                        "$ref": "#/components/schemas/Statistic"
+                    }
+                },
+                "required": [
+                    "pricePoint",
+                    "volumePoint"
+                ],
+                "type": "object"
+            },
+            "RedeemArgs": {
+                "properties": {
+                    "raAmount": {
+                        "type": "integer"
+                    },
+                    "raLiquidity": {
+                        "type": "string"
+                    },
+                    "raPaymentPkh": {
+                        "type": "string"
+                    },
+                    "raStakePkh": {
+                        "type": "string"
+                    }
+                },
+                "required": [
+                    "raLiquidity",
+                    "raAmount",
+                    "raPaymentPkh"
+                ],
+                "type": "object"
+            },
+            "Statistic": {
+                "properties": {
+                    "statAvg": {
+                        "format": "double",
+                        "type": "number"
+                    },
+                    "statHigh": {
+                        "format": "double",
+                        "type": "number"
+                    },
+                    "statLow": {
+                        "format": "double",
+                        "type": "number"
+                    }
+                },
+                "required": [
+                    "statLow",
+                    "statHigh",
+                    "statAvg"
+                ],
+                "type": "object"
+            },
+            "Status": {
+                "enum": [
+                    "Complete",
+                    "Pending"
+                ],
+                "type": "string"
+            },
+            "SwapArgs": {
+                "properties": {
+                    "saBaseAmount": {
+                        "type": "integer"
+                    },
+                    "saBaseToken": {
+                        "type": "string"
+                    },
+                    "saExFeePerTokenDen": {
+                        "type": "integer"
+                    },
+                    "saExFeePerTokenNum": {
+                        "type": "integer"
+                    },
+                    "saMinQuoteAmount": {
+                        "type": "integer"
+                    },
+                    "saQuoteToken": {
+                        "type": "string"
+                    },
+                    "saRewardPkh": {
+                        "type": "string"
+                    },
+                    "saStakePkh": {
+                        "type": "string"
+                    }
+                },
+                "required": [
+                    "saBaseToken",
+                    "saQuoteToken",
+                    "saExFeePerTokenNum",
+                    "saExFeePerTokenDen",
+                    "saRewardPkh",
+                    "saBaseAmount",
+                    "saMinQuoteAmount"
+                ],
+                "type": "object"
+            },
+            "Token": {
+                "properties": {
+                    "tokenIcon": {
+                        "type": "string"
+                    },
+                    "tokenName": {
+                        "type": "string"
+                    }
+                },
+                "required": [
+                    "tokenName",
+                    "tokenIcon"
+                ],
+                "type": "object"
+            },
+            "Transaction": {
+                "properties": {
+                    "transactionID": {
+                        "type": "string"
+                    },
+                    "transactionInput": {
+                        "format": "double",
+                        "type": "number"
+                    },
+                    "transactionOutput": {
+                        "format": "double",
+                        "type": "number"
+                    },
+                    "transactionOwner": {
+                        "type": "string"
+                    },
+                    "transactionPair": {
+                        "type": "string"
+                    },
+                    "transactionPrice": {
+                        "format": "double",
+                        "type": "number"
+                    },
+                    "transactionType": {
+                        "$ref": "#/components/schemas/BuySell"
+                    }
+                },
+                "required": [
+                    "transactionID",
+                    "transactionPrice",
+                    "transactionInput",
+                    "transactionOutput",
+                    "transactionOwner"
+                ],
+                "type": "object"
+            },
+            "TxHistoryEntry": {
+                "properties": {
+                    "action": {
+                        "$ref": "#/components/schemas/Action"
+                    },
+                    "asset": {
+                        "type": "string"
+                    },
+                    "date": {
+                        "type": "string"
+                    },
+                    "status": {
+                        "$ref": "#/components/schemas/Status"
+                    },
+                    "txId": {
+                        "type": "string"
+                    }
+                },
+                "required": [
+                    "asset",
+                    "action",
+                    "date",
+                    "status",
+                    "txId"
+                ],
+                "type": "object"
+            },
+            "UserAssetListEntry": {
+                "properties": {
+                    "userAsset": {
+                        "$ref": "#/components/schemas/AssetListEntry"
+                    },
+                    "userLiquidity": {
+                        "format": "double",
+                        "type": "number"
+                    }
+                },
+                "required": [
+                    "userLiquidity",
+                    "userAsset"
+                ],
+                "type": "object"
+            },
+            "UserFarmAssetData": {
+                "properties": {
+                    "farmAssetData": {
+                        "$ref": "#/components/schemas/FarmAssetData"
+                    },
+                    "usersStake": {
+                        "format": "double",
+                        "type": "number"
+                    }
+                },
+                "required": [
+                    "usersStake",
+                    "farmAssetData"
+                ],
+                "type": "object"
+            },
+            "UserFarmEntry": {
+                "properties": {
+                    "farmEntry": {
+                        "$ref": "#/components/schemas/FarmEntry"
+                    },
+                    "farmUser": {
+                        "type": "string"
+                    }
+                },
+                "required": [
+                    "farmUser",
+                    "farmEntry"
+                ],
+                "type": "object"
+            },
+            "UserLiquidity": {
+                "properties": {
+                    "earningsMonth": {
+                        "format": "double",
+                        "type": "number"
+                    },
+                    "liquidity": {
+                        "items": {
+                            "$ref": "#/components/schemas/UserLiquidityEntry"
+                        },
+                        "type": "array"
+                    },
+                    "poolDiversion": {
+                        "format": "double",
+                        "type": "number"
+                    },
+                    "tokensEarned": {
+                        "items": {
+                            "$ref": "#/components/schemas/Token"
+                        },
+                        "type": "array"
+                    },
+                    "userAPR": {
+                        "format": "double",
+                        "type": "number"
+                    }
+                },
+                "required": [
+                    "userAPR",
+                    "poolDiversion",
+                    "liquidity",
+                    "earningsMonth",
+                    "tokensEarned"
+                ],
+                "type": "object"
+            },
+            "UserLiquidityEntry": {
+                "properties": {
+                    "liquidityPair": {
+                        "type": "string"
+                    },
+                    "liquidityValue": {
+                        "format": "double",
+                        "type": "number"
+                    }
+                },
+                "required": [
+                    "liquidityPair",
+                    "liquidityValue"
+                ],
+                "type": "object"
+            },
+            "WrappedTx": {
+                "properties": {
+                    "cboxHex": {
+                        "format": "hex",
+                        "type": "string"
+                    },
+                    "description": {
+                        "type": "string"
+                    },
+                    "type": {
+                        "type": "string"
+                    }
+                },
+                "required": [
+                    "type",
+                    "cborHex"
+                ],
+                "type": "object"
+            }
+        }
+    },
+    "info": {
+        "title": "",
+        "version": ""
+    },
+    "openapi": "3.0.0",
+    "paths": {
+        "/assets": {
+            "get": {
+                "description": "List of assets",
+                "parameters": [
+                    {
+                        "in": "query",
+                        "name": "direction",
+                        "required": false,
+                        "schema": {
+                            "enum": [
+                                "Ascending",
+                                "Descending"
+                            ],
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "search",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json;charset=utf-8": {
+                                "schema": {
+                                    "items": {
+                                        "$ref": "#/components/schemas/AssetListEntry"
+                                    },
+                                    "type": "array"
+                                }
+                            }
+                        },
+                        "description": ""
+                    },
+                    "400": {
+                        "description": "Invalid `search` or `direction`"
+                    }
+                }
+            }
+        },
+        "/assets/{asset}": {
+            "get": {
+                "description": "Data for a specific asset",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "asset",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json;charset=utf-8": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/AssetListEntry"
+                                }
+                            }
+                        },
+                        "description": ""
+                    },
+                    "404": {
+                        "description": "`asset` not found"
+                    }
+                }
+            }
+        },
+        "/assets/{asset}/{user}": {
+            "get": {
+                "description": "Asset data incl. user specific data",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "asset",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "path",
+                        "name": "user",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json;charset=utf-8": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/UserAssetListEntry"
+                                }
+                            }
+                        },
+                        "description": ""
+                    },
+                    "404": {
+                        "description": "`asset` or `user` not found"
+                    }
+                }
+            }
+        },
+        "/build-tx/create-pool": {
+            "post": {
+                "description": "Create a new AMM pool",
+                "requestBody": {
+                    "content": {
+                        "application/json;charset=utf-8": {
+                            "schema": {
+                                "$ref": "#/components/schemas/CreatePoolArgs"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json;charset=utf-8": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/WrappedTx"
+                                }
+                            }
+                        },
+                        "description": ""
+                    },
+                    "400": {
+                        "description": "Invalid `body`"
+                    }
+                }
+            }
+        },
+        "/build-tx/deposit": {
+            "post": {
+                "description": "Make a deposit to a pool",
+                "requestBody": {
+                    "content": {
+                        "application/json;charset=utf-8": {
+                            "schema": {
+                                "$ref": "#/components/schemas/MakeDepositArgs"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json;charset=utf-8": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/WrappedTx"
+                                }
+                            }
+                        },
+                        "description": ""
+                    },
+                    "400": {
+                        "description": "Invalid `body`"
+                    }
+                }
+            }
+        },
+        "/build-tx/redeem": {
+            "post": {
+                "description": "Redeem liquidity tokens",
+                "requestBody": {
+                    "content": {
+                        "application/json;charset=utf-8": {
+                            "schema": {
+                                "$ref": "#/components/schemas/RedeemArgs"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json;charset=utf-8": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/WrappedTx"
+                                }
+                            }
+                        },
+                        "description": ""
+                    },
+                    "400": {
+                        "description": "Invalid `body`"
+                    }
+                }
+            }
+        },
+        "/build-tx/swap": {
+            "post": {
+                "description": "Swap some coins",
+                "requestBody": {
+                    "content": {
+                        "application/json;charset=utf-8": {
+                            "schema": {
+                                "$ref": "#/components/schemas/SwapArgs"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json;charset=utf-8": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/WrappedTx"
+                                }
+                            }
+                        },
+                        "description": ""
+                    },
+                    "400": {
+                        "description": "Invalid `body`"
+                    }
+                }
+            }
+        },
+        "/chart/dex": {
+            "get": {
+                "description": "The chart for the entire exchange",
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json;charset=utf-8": {
+                                "schema": {
+                                    "items": {
+                                        "items": [
+                                            {
+                                                "type": "string"
+                                            },
+                                            {
+                                                "$ref": "#/components/schemas/DexTimeseriesPoint"
+                                            }
+                                        ],
+                                        "maxItems": 2,
+                                        "minItems": 2,
+                                        "type": "array"
+                                    },
+                                    "type": "array"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            }
+        },
+        "/chart/pair/{pair}": {
+            "get": {
+                "description": "The price chart for a pair",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "pair",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json;charset=utf-8": {
+                                "schema": {
+                                    "items": {
+                                        "items": [
+                                            {
+                                                "type": "string"
+                                            },
+                                            {
+                                                "$ref": "#/components/schemas/PairTimeseriesPoint"
+                                            }
+                                        ],
+                                        "maxItems": 2,
+                                        "minItems": 2,
+                                        "type": "array"
+                                    },
+                                    "type": "array"
+                                }
+                            }
+                        },
+                        "description": ""
+                    },
+                    "404": {
+                        "description": "`pair` not found"
+                    }
+                }
+            }
+        },
+        "/farm": {
+            "get": {
+                "description": "Farming",
+                "parameters": [
+                    {
+                        "in": "query",
+                        "name": "direction",
+                        "required": false,
+                        "schema": {
+                            "enum": [
+                                "Ascending",
+                                "Descending"
+                            ],
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "search",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json;charset=utf-8": {
+                                "schema": {
+                                    "items": {
+                                        "$ref": "#/components/schemas/FarmEntry"
+                                    },
+                                    "type": "array"
+                                }
+                            }
+                        },
+                        "description": ""
+                    },
+                    "400": {
+                        "description": "Invalid `search` or `direction`"
+                    }
+                }
+            }
+        },
+        "/farm/{asset}": {
+            "get": {
+                "description": "Farm related data for a specific asset",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "asset",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json;charset=utf-8": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/FarmAssetData"
+                                }
+                            }
+                        },
+                        "description": ""
+                    },
+                    "404": {
+                        "description": "`asset` not found"
+                    }
+                }
+            }
+        },
+        "/farm/{asset}/{user}": {
+            "get": {
+                "description": "Farm related data for a specific asset and user",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "asset",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "path",
+                        "name": "user",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json;charset=utf-8": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/UserFarmAssetData"
+                                }
+                            }
+                        },
+                        "description": ""
+                    },
+                    "404": {
+                        "description": "`asset` or `user` not found"
+                    }
+                }
+            }
+        },
+        "/farm/{user}": {
+            "get": {
+                "description": "Farming with user-specific data",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "user",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "direction",
+                        "required": false,
+                        "schema": {
+                            "enum": [
+                                "Ascending",
+                                "Descending"
+                            ],
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "search",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json;charset=utf-8": {
+                                "schema": {
+                                    "items": {
+                                        "$ref": "#/components/schemas/UserFarmEntry"
+                                    },
+                                    "type": "array"
+                                }
+                            }
+                        },
+                        "description": ""
+                    },
+                    "400": {
+                        "description": "Invalid `search` or `direction`"
+                    },
+                    "404": {
+                        "description": "`user` not found"
+                    }
+                }
+            }
+        },
+        "/healthcheck": {
+            "get": {
+                "description": "Is the server alive?",
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json;charset=utf-8": {}
+                        },
+                        "description": ""
+                    }
+                }
+            }
+        },
+        "/lbe": {
+            "post": {
+                "description": "LBE (TBD)",
+                "requestBody": {
+                    "content": {
+                        "application/json;charset=utf-8": {
+                            "schema": {
+                                "$ref": "#/components/schemas/LBEArgs"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json;charset=utf-8": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/LBEResponse"
+                                }
+                            }
+                        },
+                        "description": ""
+                    },
+                    "400": {
+                        "description": "Invalid `body`"
+                    }
+                }
+            }
+        },
+        "/liquidity/{user}": {
+            "get": {
+                "description": "The user's liquidity",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "user",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json;charset=utf-8": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/UserLiquidity"
+                                }
+                            }
+                        },
+                        "description": ""
+                    },
+                    "404": {
+                        "description": "`user` not found"
+                    }
+                }
+            }
+        },
+        "/pair/historic/{timeframe-hours}/{pair}": {
+            "get": {
+                "description": "Historic data for that pair over a number of hours",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "timeframe-hours",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "in": "path",
+                        "name": "pair",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json;charset=utf-8": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/HistoricPairData"
+                                }
+                            }
+                        },
+                        "description": ""
+                    },
+                    "404": {
+                        "description": "`timeframe-hours` or `pair` not found"
+                    }
+                }
+            }
+        },
+        "/pair/transactions/buy/{pair}": {
+            "get": {
+                "description": "BUY transactions for a pair",
+                "parameters": [
+                    {
+                        "in": "query",
+                        "name": "limit",
+                        "required": false,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "in": "path",
+                        "name": "pair",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json;charset=utf-8": {
+                                "schema": {
+                                    "items": {
+                                        "$ref": "#/components/schemas/Transaction"
+                                    },
+                                    "type": "array"
+                                }
+                            }
+                        },
+                        "description": ""
+                    },
+                    "400": {
+                        "description": "Invalid `limit`"
+                    },
+                    "404": {
+                        "description": "`pair` not found"
+                    }
+                }
+            }
+        },
+        "/pair/transactions/sell/{pair}": {
+            "get": {
+                "description": "SELL transactions for a pair",
+                "parameters": [
+                    {
+                        "in": "query",
+                        "name": "limit",
+                        "required": false,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "in": "path",
+                        "name": "pair",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json;charset=utf-8": {
+                                "schema": {
+                                    "items": {
+                                        "$ref": "#/components/schemas/Transaction"
+                                    },
+                                    "type": "array"
+                                }
+                            }
+                        },
+                        "description": ""
+                    },
+                    "400": {
+                        "description": "Invalid `limit`"
+                    },
+                    "404": {
+                        "description": "`pair` not found"
+                    }
+                }
+            }
+        },
+        "/pair/transactions/{pair}": {
+            "get": {
+                "description": "All transactions for a pair",
+                "parameters": [
+                    {
+                        "in": "query",
+                        "name": "limit",
+                        "required": false,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "in": "path",
+                        "name": "pair",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json;charset=utf-8": {
+                                "schema": {
+                                    "items": {
+                                        "$ref": "#/components/schemas/Transaction"
+                                    },
+                                    "type": "array"
+                                }
+                            }
+                        },
+                        "description": ""
+                    },
+                    "400": {
+                        "description": "Invalid `limit`"
+                    },
+                    "404": {
+                        "description": "`pair` not found"
+                    }
+                }
+            }
+        },
+        "/pairs": {
+            "get": {
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json;charset=utf-8": {
+                                "schema": {
+                                    "items": {
+                                        "$ref": "#/components/schemas/Pair"
+                                    },
+                                    "type": "array"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            }
+        },
+        "/tx-history/{user}": {
+            "get": {
+                "description": "History of the user's transactions",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "user",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "limit",
+                        "required": false,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json;charset=utf-8": {
+                                "schema": {
+                                    "items": {
+                                        "$ref": "#/components/schemas/TxHistoryEntry"
+                                    },
+                                    "type": "array"
+                                }
+                            }
+                        },
+                        "description": ""
+                    },
+                    "400": {
+                        "description": "Invalid `limit`"
+                    },
+                    "404": {
+                        "description": "`user` not found"
+                    }
+                }
+            }
+        }
+    }
+}

@@ -25,7 +25,7 @@ import           Servant.API                   (NoContent (..), (:<|>) (..))
 import           Servant.Server                (Server, serve)
 
 server :: Maybe (TxBuildingContext, TVar ChainFollowerState) -> Server FullAPI
-server tv = (health :<|> maybe mockHistoricApi (Real.historicAPI . snd) tv :<|> mockLiquidityAPI :<|> mockFarmAPI :<|> mockLBEAPI :<|> mockTxHistoryAPI) :<|> maybe mockInternalAPI (Real.internalAPI . snd) tv :<|> maybe mockBuildTxAPI (uncurry Real.buildTxAPI) tv
+server tv = (health :<|> maybe mockHistoricApi (Real.historicAPI . snd) tv :<|> mockLiquidityAPI :<|> mockFarmAPI :<|> mockLBEAPI :<|> mockTxHistoryAPI :<|> maybe mockBuildTxAPI (uncurry Real.buildTxAPI) tv) :<|> maybe mockInternalAPI (Real.internalAPI . snd) tv
   where
     health = pure NoContent
 

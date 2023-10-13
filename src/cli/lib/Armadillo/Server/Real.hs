@@ -25,8 +25,6 @@ import           Armadillo.Api                        (AssetID (..), BuildTxAPI,
                                                        toCardanoAssetId)
 import           Armadillo.BuildTx                    (DepositOutput (..),
                                                        PoolOutput (..),
-                                                       RedeemOutput (..),
-                                                       SwapOutput (..),
                                                        SwapParams (..),
                                                        poolLiquidityAssetId,
                                                        poolXAssetId,
@@ -61,7 +59,6 @@ import           Convex.PlutusLedger                  (unTransAssetId,
                                                        unTransStakeKeyHash)
 import           Convex.Utils                         (liftEither, mapError)
 import qualified Convex.Utxos
-import           Data.Bifunctor                       (Bifunctor (..))
 import           Data.Foldable                        (toList)
 import qualified Data.Map                             as Map
 import           Data.Maybe                           (catMaybes)
@@ -164,34 +161,34 @@ fromBlockchainError err = err500{errBody = fromString ("cardano-node action fail
 fromBuildTxError :: BuildTxError -> ServerError
 fromBuildTxError err = err500{errBody = fromString ("build tx action failed: " <> show err)}
 
-createPoolTx :: forall m. (MonadIO m, MonadError ServerError m) => TxBuildingContext -> CreatePoolArgs -> m (WrappedTx, PoolOutput TxIn)
+createPoolTx :: forall m. (MonadIO m, MonadError ServerError m) => TxBuildingContext -> CreatePoolArgs -> m WrappedTx
 createPoolTx ctx@TxBuildingContext{scripts} CreatePoolArgs{cpoFeeNumerator, cpoAssetX, cpoAssetY, cpoQuantityX, cpoQuantityY, cpoPublicKeyHash} = runMonadLogIgnoreT $ runTxBuildAction ctx $ do
   paymentCred <- C.PaymentCredentialByKey <$> liftEither (fromBuildTxError . SerialisationError) (pure $ unTransPubKeyHash cpoPublicKeyHash)
   (assetX, assetY) <- (,) <$> parseAssetID cpoAssetX <*> parseAssetID cpoAssetY
-  first WrappedTx <$> mapError (fromBuildTxError . TxCommandError) (Command.createPool scripts paymentCred  cpoFeeNumerator (assetX, Quantity cpoQuantityX) (assetY, Quantity cpoQuantityY))
+  WrappedTx . fst <$> mapError (fromBuildTxError . TxCommandError) (Command.createPool scripts paymentCred  cpoFeeNumerator (assetX, Quantity cpoQuantityX) (assetY, Quantity cpoQuantityY))
 
-makeDeposit :: forall m. (MonadIO m, MonadError ServerError m) => TxBuildingContext -> TVar ChainFollowerState -> MakeDepositArgs -> m (WrappedTx, DepositOutput TxIn)
+makeDeposit :: forall m. (MonadIO m, MonadError ServerError m) => TxBuildingContext -> TVar ChainFollowerState -> MakeDepositArgs -> m WrappedTx
 makeDeposit ctx@TxBuildingContext{scripts} tv MakeDepositArgs{mdAssetX, mdAssetY, mdQuantityX, mdQuantityY, mdPublicKeyHash, mdStakingCredential} = runMonadLogIgnoreT $ runTxBuildAction ctx $ do
   paymentCred <- liftEither (fromBuildTxError . SerialisationError) (pure $ unTransPubKeyHash mdPublicKeyHash)
   stakeCred <- liftEither (fromBuildTxError . SerialisationError) (pure $ traverse unTransStakeKeyHash mdStakingCredential)
   (assetX, assetY) <- (,) <$> parseAssetID mdAssetX <*> parseAssetID mdAssetY
   PoolOutput{poConfig} <- liftIO (readTVarIO tv) >>= mapError (fromBuildTxError . TxCommandError) . selectPool assetX assetY
-  first WrappedTx <$> mapError (fromBuildTxError . TxCommandError) (Command.makeDeposit scripts paymentCred stakeCred poConfig (Quantity mdQuantityX, Quantity mdQuantityY))
+  WrappedTx . fst <$> mapError (fromBuildTxError . TxCommandError) (Command.makeDeposit scripts paymentCred stakeCred poConfig (Quantity mdQuantityX, Quantity mdQuantityY))
 
-makeSwap :: forall m. (MonadIO m, MonadError ServerError m) => TxBuildingContext -> TVar ChainFollowerState -> SwapArgs -> m (WrappedTx, SwapOutput TxIn)
+makeSwap :: forall m. (MonadIO m, MonadError ServerError m) => TxBuildingContext -> TVar ChainFollowerState -> SwapArgs -> m WrappedTx
 makeSwap ctx@TxBuildingContext{scripts} tv args = runMonadLogIgnoreT $ runTxBuildAction ctx $ do
   params@SwapParams{spBase, spQuote} <- mkSwapParams args
   PoolOutput{poConfig} <- liftIO (readTVarIO tv) >>= mapError (fromBuildTxError . TxCommandError) . selectPool spBase spQuote
-  first WrappedTx <$> mapError (fromBuildTxError . TxCommandError) (Command.makeSwap scripts poConfig params)
+  WrappedTx . fst <$> mapError (fromBuildTxError . TxCommandError) (Command.makeSwap scripts poConfig params)
 
-makeRedeem :: forall m. (MonadIO m, MonadError ServerError m) => TxBuildingContext -> TVar ChainFollowerState -> RedeemArgs -> m (WrappedTx, RedeemOutput TxIn)
+makeRedeem :: forall m. (MonadIO m, MonadError ServerError m) => TxBuildingContext -> TVar ChainFollowerState -> RedeemArgs -> m WrappedTx
 makeRedeem ctx@TxBuildingContext{scripts} tv RedeemArgs{raLiquidity, raAmount, raPaymentPkh, raStakePkh} = runMonadLogIgnoreT $ runTxBuildAction ctx $ do
   lq <- parseAssetID raLiquidity
   (pkh, skh) <-
     (,) <$> liftEither (fromBuildTxError . SerialisationError) (pure $ unTransPubKeyHash raPaymentPkh)
         <*> liftEither (fromBuildTxError . SerialisationError) (pure $ traverse unTransStakeKeyHash raStakePkh)
   PoolOutput{poConfig} <- liftIO (readTVarIO tv) >>= mapError (fromBuildTxError . TxCommandError) . selectPoolLQ lq
-  first WrappedTx <$> mapError (fromBuildTxError . TxCommandError) (Command.makeRedemption scripts pkh skh poConfig (Quantity raAmount))
+  WrappedTx . fst <$> mapError (fromBuildTxError . TxCommandError) (Command.makeRedemption scripts pkh skh poConfig (Quantity raAmount))
 
 mkSwapParams :: MonadError ServerError m => SwapArgs -> m SwapParams
 mkSwapParams SwapArgs{saBaseToken, saQuoteToken, saExFeePerTokenDen, saExFeePerTokenNum, saRewardPkh, saStakePkh, saBaseAmount, saMinQuoteAmount} = do

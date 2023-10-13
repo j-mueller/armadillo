@@ -68,16 +68,22 @@ module Armadillo.Api(
 
 ) where
 
-import           Armadillo.BuildTx               (DepositOutput, PoolOutput,
-                                                  RedeemOutput, SwapOutput)
+import           Armadillo.BuildTx               (DepositOutput, PoolOutput)
 import           Armadillo.Utils                 (readAssetId, unReadAssetId)
 import           Cardano.Api                     (TxIn)
 import qualified Cardano.Api                     as C
+import           Control.Lens                    (at, (&), (.~), (?~))
 import           Data.Aeson                      (FromJSON (..), FromJSONKey,
                                                   ToJSON (..), ToJSONKey)
 import           Data.Bifunctor                  (Bifunctor (..))
 import qualified Data.ByteString.Lazy            as BSL
-import           Data.OpenApi                    (ToParamSchema, ToSchema)
+import           Data.OpenApi                    (NamedSchema (..),
+                                                  OpenApiType (..),
+                                                  Referenced (Inline),
+                                                  Schema (..), ToParamSchema,
+                                                  ToSchema (..),
+                                                  declareSchemaRef, format,
+                                                  properties, required, type_)
 import           Data.OpenApi.Internal           (OpenApi)
 import           Data.OpenApi.Internal.Utils     (encodePretty)
 import           Data.Proxy                      (Proxy (..))
@@ -428,7 +434,6 @@ type Healthcheck = "healthcheck" :> Description "Is the server alive?" :> Get '[
 type FullAPI =
   API
   :<|> ("internal" :> InternalAPI)
-  :<|> ("build-tx" :> BuildTxAPI)
 
 type API =
   Healthcheck
@@ -437,6 +442,7 @@ type API =
   :<|> FarmAPI
   :<|> LBEAPI
   :<|> TxHistoryAPI
+  :<|> ("build-tx" :> BuildTxAPI)
 
 -- TRADE PANEL
 -- 1) Market swap
@@ -488,6 +494,7 @@ getDepositOutputs =
 
 newtype WrappedTx = WrappedTx (C.Tx C.BabbageEra)
 
+
 instance ToJSON WrappedTx where
   toJSON (WrappedTx tx) = toJSON (C.serialiseToTextEnvelope Nothing tx)
 
@@ -514,7 +521,7 @@ data CreatePoolArgs =
     , cpoStakingCredential :: Maybe PubKeyHash
     }
     deriving stock (Eq, Show, Generic)
-    deriving anyclass (ToJSON, FromJSON)
+    deriving anyclass (ToJSON, FromJSON, ToSchema)
 
 data MakeDepositArgs =
   MakeDepositArgs
@@ -526,7 +533,7 @@ data MakeDepositArgs =
     , mdStakingCredential :: Maybe PubKeyHash
     }
     deriving stock (Eq, Show, Generic)
-    deriving anyclass (ToJSON, FromJSON)
+    deriving anyclass (ToJSON, FromJSON, ToSchema)
 
 data SwapArgs =
   SwapArgs
@@ -540,7 +547,7 @@ data SwapArgs =
     , saMinQuoteAmount   :: Integer
     }
     deriving stock (Eq, Show, Generic)
-    deriving anyclass (ToJSON, FromJSON)
+    deriving anyclass (ToJSON, FromJSON, ToSchema)
 
 
 data RedeemArgs =
@@ -551,30 +558,46 @@ data RedeemArgs =
     , raStakePkh   :: Maybe PubKeyHash
     }
     deriving stock (Eq, Show, Generic)
-    deriving anyclass (ToJSON, FromJSON)
+    deriving anyclass (ToJSON, FromJSON, ToSchema)
 
 type BuildTxAPI =
-  "create-pool" :> Description "Create a new AMM pool" :> ReqBody '[JSON] CreatePoolArgs :> Post '[JSON] (WrappedTx, PoolOutput TxIn)
-  :<|> "deposit" :> Description "Make a deposit to a pool" :> ReqBody '[JSON] MakeDepositArgs :> Post '[JSON] (WrappedTx, DepositOutput TxIn)
-  :<|> "swap" :> Description "Swap some coins" :> ReqBody '[JSON] SwapArgs :> Post '[JSON] (WrappedTx, SwapOutput TxIn)
-  :<|> "redeem" :> Description "Redeem liquidity tokens" :> ReqBody '[JSON] RedeemArgs :> Post '[JSON] (WrappedTx, RedeemOutput TxIn)
+  "create-pool" :> Description "Create a new AMM pool" :> ReqBody '[JSON] CreatePoolArgs :> Post '[JSON] WrappedTx
+  :<|> "deposit" :> Description "Make a deposit to a pool" :> ReqBody '[JSON] MakeDepositArgs :> Post '[JSON] WrappedTx
+  :<|> "swap" :> Description "Swap some coins" :> ReqBody '[JSON] SwapArgs :> Post '[JSON] WrappedTx
+  :<|> "redeem" :> Description "Redeem liquidity tokens" :> ReqBody '[JSON] RedeemArgs :> Post '[JSON] WrappedTx
 
-buildCreatePoolTx :: CreatePoolArgs -> ClientEnv -> IO (Either ClientError (WrappedTx, PoolOutput TxIn))
+buildCreatePoolTx :: CreatePoolArgs -> ClientEnv -> IO (Either ClientError WrappedTx)
 buildCreatePoolTx args clientEnv =
   let postTx :<|> _ = client (Proxy @("build-tx" :> BuildTxAPI))
   in runClientM (postTx args) clientEnv
 
-buildMakeDepositTx :: MakeDepositArgs -> ClientEnv -> IO (Either ClientError (WrappedTx, DepositOutput TxIn))
+buildMakeDepositTx :: MakeDepositArgs -> ClientEnv -> IO (Either ClientError WrappedTx)
 buildMakeDepositTx args clientEnv =
   let _ :<|> postDeposit :<|> _ = client (Proxy @("build-tx" :> BuildTxAPI))
   in runClientM (postDeposit args) clientEnv
 
-buildSwapTx :: SwapArgs -> ClientEnv -> IO (Either ClientError (WrappedTx, SwapOutput TxIn))
+buildSwapTx :: SwapArgs -> ClientEnv -> IO (Either ClientError WrappedTx)
 buildSwapTx args clientEnv =
   let _ :<|> _ :<|> swap :<|> _ = client (Proxy @("build-tx" :> BuildTxAPI))
   in runClientM (swap args) clientEnv
 
-buildRedeemTx :: RedeemArgs -> ClientEnv -> IO (Either ClientError (WrappedTx, RedeemOutput TxIn))
+buildRedeemTx :: RedeemArgs -> ClientEnv -> IO (Either ClientError WrappedTx)
 buildRedeemTx args clientEnv =
   let _ :<|> _ :<|> _ :<|> redeem = client (Proxy @("build-tx" :> BuildTxAPI))
   in runClientM (redeem args) clientEnv
+
+-- | Schema for binary data (base16 encoded).
+hexSchema :: Schema
+hexSchema = mempty
+  & type_ ?~ OpenApiString
+  & format ?~ "hex"
+
+instance ToSchema WrappedTx where
+  declareNamedSchema _ = do
+    str <- declareSchemaRef (Proxy @String)
+    return $ NamedSchema (Just "WrappedTx") $ mempty
+      & type_ ?~ OpenApiObject
+      & properties . at "type" ?~ str
+      & properties . at "description" ?~ str
+      & properties . at "cboxHex" ?~ Inline hexSchema
+      & required .~ [ "type", "cborHex" ]

@@ -1,5 +1,6 @@
 {-# LANGUAGE DerivingVia       #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TypeApplications  #-}
 {-# OPTIONS_GHC -Wno-orphans -Wno-identities #-}
 {-# LANGUAGE DeriveAnyClass    #-}
 module Armadillo.Orphans() where
@@ -16,6 +17,8 @@ import           Data.Bifunctor                  (Bifunctor (..))
 import qualified Data.ByteString                 as BS
 import qualified Data.ByteString.Base16          as Base16
 import qualified Data.ByteString.Lazy            as BSL
+import           Data.OpenApi                    (ToSchema (..))
+import           Data.Proxy                      (Proxy (..))
 import           Data.String                     (IsString (..))
 import           Data.Text                       (Text)
 import qualified Data.Text                       as Text
@@ -121,6 +124,9 @@ deriving anyclass instance ToJSON PubKeyHash
 deriving anyclass instance FromJSON PubKeyHash
 deriving anyclass instance JSON.FromJSONKey PubKeyHash
 deriving anyclass instance JSON.ToJSONKey PubKeyHash
+
+instance ToSchema PubKeyHash where
+    declareNamedSchema _ = declareNamedSchema (Proxy @Text)
 
 deriving via (JSONViaSerialise Data) instance ToJSON Data
 deriving via (JSONViaSerialise Data) instance FromJSON Data
