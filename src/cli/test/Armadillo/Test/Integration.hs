@@ -7,24 +7,22 @@ module Armadillo.Test.Integration(
 ) where
 
 import qualified Armadillo.Api              as Api
-import           Armadillo.BuildTx          (PoolOutput (..))
 import           Armadillo.Cli.Command      (Command (..), Fee (..),
                                              RefScriptCommand (..),
                                              ServerConfig (..))
 import qualified Armadillo.Server.Mock      as Mock
 import           Armadillo.Test.CliCommand  (ChainFollowerStartup (..),
-                                             apiHealth, apiPairs, apiPools,
+                                             apiHealth, apiPairs,
                                              apiTransactions,
                                              mkNodeClientConfig, runCliCommand,
                                              withHttpServer)
 import           Armadillo.Test.DevEnv      (DevEnv (..), TestLog (..),
                                              createCurrency, createPool,
-                                             makeDeposit, waitForKupoSync,
-                                             withDevEnv)
+                                             makeDeposit, makeSwap,
+                                             waitForKupoSync, withDevEnv)
 import           Armadillo.Test.RunningKupo (RunningKupo (..))
 import           Armadillo.Test.Utils       (availableTokens, checkRefScripts)
 import qualified Cardano.Api                as C
-import           Control.Concurrent         (threadDelay)
 import           Convex.Devnet.CardanoNode  (getCardanoNodeVersion,
                                              withCardanoNodeDevnet)
 import           Convex.Devnet.Logging      (contramap, showLogsOnFailure)
@@ -94,25 +92,22 @@ checkCreateCurrency = withDevEnv $ \de@DevEnv{wallet, tracer} -> do
 
 endToEndTest :: (String -> IO ()) -> IO ()
 endToEndTest step = withDevEnv $ \de@DevEnv{httpServer, tracer, wallet} -> do
-  threadDelay 3_000_000
+  let wait = waitForKupoSync de
+  wait
   step "Creating currency"
   asset1 <- createCurrency de "token1"
-  threadDelay 3_000_000
+  wait
   availableTokens (contramap TWallet tracer) wallet asset1 >>= assertEqual "Should have 1000 tokens" 1000
   step "Creating pool"
-  waitForKupoSync de
   _p <- createPool de (Fee 123) (asset1, 100) (C.AdaAssetId, 100)
-  threadDelay 3_000_000
-  waitForKupoSync de
+  wait
   apiPairs httpServer >>= assertEqual "there should be one pair" 1 . length
-  waitForKupoSync de
-  step "Querying pools"
-  [PoolOutput{poTxIn=oldTxI}] <- apiPools httpServer
+  step "Making a swap"
+  wait
+  _ <- makeSwap de asset1 C.AdaAssetId 20
   step "Making a deposit"
-  threadDelay 3_000_000
-  waitForKupoSync de
+  wait
   _ <- makeDeposit de asset1 C.AdaAssetId (50, 50)
-  -- threadDelay 10_000_000
   pure ()
   -- step "Checking that the deposit has been applied"
   -- [PoolOutput{poTxIn=newTxI}] <- apiPools httpServer

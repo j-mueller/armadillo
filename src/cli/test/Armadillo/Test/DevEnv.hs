@@ -8,17 +8,21 @@ module Armadillo.Test.DevEnv(
   TestLog(..),
   DevEnv(..),
   withDevEnv,
+  dumpUtxoSet,
   createCurrency,
   createPool,
   makeDeposit,
+  makeSwap,
   waitForKupoSync
 ) where
 
 import           Armadillo.Api                      (CreatePoolArgs (..),
                                                      MakeDepositArgs (..),
+                                                     SwapArgs (..),
                                                      WrappedTx (..))
 import qualified Armadillo.Api                      as Api
-import           Armadillo.BuildTx                  (DepositOutput, PoolOutput)
+import           Armadillo.BuildTx                  (DepositOutput, PoolOutput,
+                                                     SwapOutput)
 import           Armadillo.Cli                      (readJSONFile)
 import           Armadillo.Cli.Command              (Command (..),
                                                      DebugCommand (..),
@@ -48,6 +52,7 @@ import           Convex.Devnet.CardanoNode          (NodeLog, RunningNode (..),
 import           Convex.Devnet.Logging              (Tracer, contramap,
                                                      showLogsOnFailure,
                                                      traceWith)
+import qualified Convex.Devnet.NodeQueries          as Queries
 import           Convex.Devnet.Utils                (failure, withTempDir)
 import           Convex.Devnet.WalletServer         (RunningWalletServer (..),
                                                      WalletLog, withWallet)
@@ -69,7 +74,7 @@ data TestLog =
   | TCli CliLog
   | TKupoLog KupoLog
   | TWaitingForKupoSync{ nodeSlot :: SlotNo, kupoSlot :: SlotNo }
-  | TDumpUtxoSet ()
+  | TDumpUtxoSet (C.UTxO C.BabbageEra)
   deriving stock (Show, Generic)
   deriving anyclass (ToJSON, FromJSON)
 
@@ -98,6 +103,12 @@ withDevEnv action =
                 let de = DevEnv{tracer, tempDir, node, wallet, httpServer, kupo}
                 waitForKupoSync de
                 action de
+
+{-| Write the UTxO set to the log
+-}
+dumpUtxoSet :: DevEnv -> IO ()
+dumpUtxoSet DevEnv{tracer, node=RunningNode{rnNetworkId, rnNodeSocket}} = do
+  Queries.queryUTxOWhole rnNetworkId rnNodeSocket >>= traceWith tracer . TDumpUtxoSet
 
 createCurrency :: DevEnv -> String -> IO AssetId
 createCurrency DevEnv{tempDir, wallet=RunningWalletServer{rwsOpConfigSigning}, node, tracer, kupo=RunningKupo{rkConfig}} name = do
@@ -134,6 +145,26 @@ makeDeposit devEnv@DevEnv{wallet=RunningWalletServer{rwsOperator}, node} assetX 
   _ <- signAndSubmitTx node rwsOperator k
   pure poolOut
 
+{-| Make a swap to a pool
+-}
+makeSwap :: DevEnv -> AssetId -> AssetId -> Quantity -> IO (SwapOutput TxIn)
+makeSwap devEnv@DevEnv{wallet=RunningWalletServer{rwsOperator}, node} assetX assetY (Quantity saBaseAmount) = do
+  let (saRewardPkh, saStakePkh) = operatorWalletID rwsOperator
+      args =
+        SwapArgs
+        { saBaseToken = Api.fromCardanoAssetId assetX
+        , saQuoteToken = Api.fromCardanoAssetId assetY
+        , saExFeePerTokenNum = 1
+        , saExFeePerTokenDen = 100
+        , saRewardPkh
+        , saStakePkh
+        , saBaseAmount
+        , saMinQuoteAmount = 1
+        }
+  (WrappedTx k, swapOut) <- runAPIRequest (Api.buildSwapTx args) devEnv
+  _ <- signAndSubmitTx node rwsOperator k
+  pure swapOut
+
 {-| Call the chain follower API, failing on errors
 -}
 runAPIRequest :: (ClientEnv -> IO (Either ClientError a)) -> DevEnv -> IO a
@@ -153,7 +184,6 @@ signAndSubmitTx RunningNode{rnConnectInfo=(connectInfo, env)} operator t = do
 
 waitForKupoSync :: DevEnv -> IO ()
 waitForKupoSync DevEnv{kupo=RunningKupo{rkClientEnv}, node=RunningNode{rnConnectInfo=(connectInfo, _env)}, tracer} = do
-  threadDelay 5_000_000
   NodeQueries.queryTip connectInfo >>= \case
     C.ChainPointAtGenesis -> fail "Unexpected genesis"
     C.ChainPoint nodeSlot _ -> go nodeSlot
@@ -162,8 +192,8 @@ waitForKupoSync DevEnv{kupo=RunningKupo{rkClientEnv}, node=RunningNode{rnConnect
     go nodeSlot = do
       KupoHealth{most_recent_node_tip} <- Kupo.getKupoHealth rkClientEnv >>= either (fail . show) pure
       let kupoSlot = C.SlotNo $ fromInteger most_recent_node_tip
-      unless (kupoSlot > nodeSlot) $ do
+      unless (kupoSlot >= nodeSlot) $ do
         traceWith tracer $ TWaitingForKupoSync{nodeSlot, kupoSlot}
-        threadDelay 2_000_000
+        threadDelay 1_000_000
         go nodeSlot
 

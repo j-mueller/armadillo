@@ -33,8 +33,7 @@ import           Armadillo.Api        (AssetID (..), AssetListEntry (..),
                                        TxHistoryEntry, UserAssetListEntry (..),
                                        UserFarmAssetData (..),
                                        UserFarmEntry (..), UserID (..),
-                                       UserLiquidity (..), WrappedTx, getPairId,
-                                       mkPair)
+                                       UserLiquidity (..), getPairId, mkPair)
 import           Control.Monad.Except (MonadError (throwError))
 import           Data.Map             (Map)
 import qualified Data.Map             as Map
@@ -202,4 +201,4 @@ mockInternalAPI :: Server InternalAPI
 mockInternalAPI = pure [] :<|> pure []
 
 mockBuildTxAPI :: Server BuildTxAPI
-mockBuildTxAPI = const (throwError err501) :<|> const (throwError err501)
+mockBuildTxAPI = const (throwError err501) :<|> const (throwError err501) :<|> const (throwError err501)

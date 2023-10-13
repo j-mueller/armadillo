@@ -18,8 +18,7 @@ import           GHC.Generics                (Generic)
 import           GHC.IO.Handle.Types         (Handle)
 import           Network.HTTP.Client         (defaultManagerSettings,
                                               newManager)
-import           Servant.Client              (ClientEnv, ClientError,
-                                              mkClientEnv)
+import           Servant.Client              (ClientEnv, mkClientEnv)
 import           Servant.Client.Core.BaseUrl (BaseUrl (..), Scheme (..))
 import           System.FilePath             ((</>))
 import           System.IO                   (BufferMode (NoBuffering),

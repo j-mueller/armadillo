@@ -45,8 +45,9 @@ import qualified Network.HTTP.Client    as HTTP
 import           Options.Applicative    (Parser, auto, help, long, option,
                                          strOption)
 import qualified Options.Applicative
-import           Servant.API            (Capture, Get, JSON, ToHttpApiData (..),
-                                         type (:>), (:<|>) (..))
+import           Servant.API            (Capture, Get, JSON, QueryFlag,
+                                         ToHttpApiData (..), type (:>),
+                                         (:<|>) (..))
 import           Servant.Client         (BaseUrl (..), ClientEnv, ClientError,
                                          Scheme (Http), client, mkClientEnv,
                                          runClientM)
@@ -95,12 +96,12 @@ data KupoOutput =
 
 type KupoAPI =
   "health" :> Get '[JSON] KupoHealth
-  :<|> "matches" :> Capture "credential" KupoCredentialMatch :> Get '[JSON] [KupoOutput]
+  :<|> "matches" :> Capture "credential" KupoCredentialMatch :> QueryFlag "unspent" :> Get '[JSON] [KupoOutput]
 
 getKupoMatches :: ClientEnv -> PaymentCredential -> IO (Either ClientError [KupoOutput])
 getKupoMatches clientEnv cred = do
   let _ :<|> matches = client (Proxy @KupoAPI)
-  runClientM (matches $ KupoCredentialMatch cred) clientEnv
+  runClientM (matches (KupoCredentialMatch cred) True) clientEnv
 
 getKupoHealth :: ClientEnv -> IO (Either ClientError KupoHealth)
 getKupoHealth clientEnv =
