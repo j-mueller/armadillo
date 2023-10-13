@@ -18,8 +18,9 @@ import           Armadillo.Test.CliCommand  (ChainFollowerStartup (..),
                                              withHttpServer)
 import           Armadillo.Test.DevEnv      (DevEnv (..), TestLog (..),
                                              createCurrency, createPool,
-                                             makeDeposit, makeSwap,
-                                             waitForKupoSync, withDevEnv)
+                                             makeDeposit, makeRedemption,
+                                             makeSwap, waitForKupoSync,
+                                             withDevEnv)
 import           Armadillo.Test.RunningKupo (RunningKupo (..))
 import           Armadillo.Test.Utils       (availableTokens, checkRefScripts)
 import qualified Cardano.Api                as C
@@ -99,7 +100,7 @@ endToEndTest step = withDevEnv $ \de@DevEnv{httpServer, tracer, wallet} -> do
   wait
   availableTokens (contramap TWallet tracer) wallet asset1 >>= assertEqual "Should have 1000 tokens" 1000
   step "Creating pool"
-  _p <- createPool de (Fee 123) (asset1, 100) (C.AdaAssetId, 100)
+  (_, lqToken) <- createPool de (Fee 123) (asset1, 100) (C.AdaAssetId, 100)
   wait
   apiPairs httpServer >>= assertEqual "there should be one pair" 1 . length
   step "Making a swap"
@@ -108,7 +109,10 @@ endToEndTest step = withDevEnv $ \de@DevEnv{httpServer, tracer, wallet} -> do
   step "Making a deposit"
   wait
   _ <- makeDeposit de asset1 C.AdaAssetId (50, 50)
-  pure ()
+  wait
+  step "Redeem some liquidity tokens"
+  _ <- makeRedemption de lqToken 2
+  wait
   -- step "Checking that the deposit has been applied"
   -- [PoolOutput{poTxIn=newTxI}] <- apiPools httpServer
   -- assertBool "Old should be different from new" (oldTxI /= newTxI)

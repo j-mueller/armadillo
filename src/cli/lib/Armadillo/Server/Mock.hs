@@ -201,4 +201,8 @@ mockInternalAPI :: Server InternalAPI
 mockInternalAPI = pure [] :<|> pure []
 
 mockBuildTxAPI :: Server BuildTxAPI
-mockBuildTxAPI = const (throwError err501) :<|> const (throwError err501) :<|> const (throwError err501)
+mockBuildTxAPI =
+    const (throwError err501)
+    :<|> const (throwError err501)
+    :<|> const (throwError err501)
+    :<|> const (throwError err501)

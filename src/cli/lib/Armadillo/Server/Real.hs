@@ -18,13 +18,17 @@ import           Armadillo.Api                        (AssetID (..), BuildTxAPI,
                                                        CreatePoolArgs (..),
                                                        HistoricAPI, InternalAPI,
                                                        MakeDepositArgs (..),
-                                                       Pair (..), SwapArgs (..),
+                                                       Pair (..),
+                                                       RedeemArgs (..),
+                                                       SwapArgs (..),
                                                        WrappedTx (..), mkPair,
                                                        toCardanoAssetId)
 import           Armadillo.BuildTx                    (DepositOutput (..),
                                                        PoolOutput (..),
+                                                       RedeemOutput (..),
                                                        SwapOutput (..),
                                                        SwapParams (..),
+                                                       poolLiquidityAssetId,
                                                        poolXAssetId,
                                                        poolYAssetId)
 import           Armadillo.ChainFollower.DepositState (DepositState (..))
@@ -82,7 +86,7 @@ historicAPI tv =
   :<|> M.getChartForDex
 
 buildTxAPI :: TxBuildingContext -> TVar ChainFollowerState -> Server BuildTxAPI
-buildTxAPI ctx tv = createPoolTx ctx :<|> makeDeposit ctx tv :<|> makeSwap ctx tv
+buildTxAPI ctx tv = createPoolTx ctx :<|> makeDeposit ctx tv :<|> makeSwap ctx tv :<|> makeRedeem ctx tv
 
 data ConversionError =
   PlutusToCardanoApiError C.SerialiseAsRawBytesError
@@ -180,6 +184,15 @@ makeSwap ctx@TxBuildingContext{scripts} tv args = runMonadLogIgnoreT $ runTxBuil
   PoolOutput{poConfig} <- liftIO (readTVarIO tv) >>= mapError (fromBuildTxError . TxCommandError) . selectPool spBase spQuote
   first WrappedTx <$> mapError (fromBuildTxError . TxCommandError) (Command.makeSwap scripts poConfig params)
 
+makeRedeem :: forall m. (MonadIO m, MonadError ServerError m) => TxBuildingContext -> TVar ChainFollowerState -> RedeemArgs -> m (WrappedTx, RedeemOutput TxIn)
+makeRedeem ctx@TxBuildingContext{scripts} tv RedeemArgs{raLiquidity, raAmount, raPaymentPkh, raStakePkh} = runMonadLogIgnoreT $ runTxBuildAction ctx $ do
+  lq <- parseAssetID raLiquidity
+  (pkh, skh) <-
+    (,) <$> liftEither (fromBuildTxError . SerialisationError) (pure $ unTransPubKeyHash raPaymentPkh)
+        <*> liftEither (fromBuildTxError . SerialisationError) (pure $ traverse unTransStakeKeyHash raStakePkh)
+  PoolOutput{poConfig} <- liftIO (readTVarIO tv) >>= mapError (fromBuildTxError . TxCommandError) . selectPoolLQ lq
+  first WrappedTx <$> mapError (fromBuildTxError . TxCommandError) (Command.makeRedemption scripts pkh skh poConfig (Quantity raAmount))
+
 mkSwapParams :: MonadError ServerError m => SwapArgs -> m SwapParams
 mkSwapParams SwapArgs{saBaseToken, saQuoteToken, saExFeePerTokenDen, saExFeePerTokenNum, saRewardPkh, saStakePkh, saBaseAmount, saMinQuoteAmount} = do
   SwapParams
@@ -208,4 +221,11 @@ selectPool a b ChainFollowerState{cfsPoolState=PoolUtxoState{_utxos}} = do
         in x == (a, b) || x == (b, a)
   case filter suitable (fmap snd $ toList $ Convex.Utxos._utxos _utxos) of
     []  -> throwError (Command.NoSuitablePoolFound a b)
+    x:_ -> pure x
+
+selectPoolLQ :: MonadError Command.TxCommandError m => C.AssetId -> ChainFollowerState -> m (PoolOutput TxIn)
+selectPoolLQ lqToken ChainFollowerState{cfsPoolState=PoolUtxoState{_utxos}} = do
+  let suitable PoolOutput{poConfig} = poolLiquidityAssetId poConfig == lqToken
+  case filter suitable (fmap snd $ toList $ Convex.Utxos._utxos _utxos) of
+    []  -> throwError (Command.NoPoolForLiquidityToken lqToken)
     x:_ -> pure x

@@ -17,7 +17,7 @@ import           Armadillo.Command              (CreatePoolParams (..),
                                                  deployRefScripts,
                                                  localCreatePool,
                                                  localMakeDeposit,
-                                                 makeRedemption, makeSwap)
+                                                 localMakeRedemption, makeSwap)
 import qualified Armadillo.Test.Scripts         as Scripts
 import           Armadillo.Test.Utils           (checkRefScriptsUTxO,
                                                  loadScripts)
@@ -169,7 +169,7 @@ redeemTest = do
   deposit <- depositLQ pool
   refScripts <- failOnError (deployRefScripts scripts testOperator)
   newPool <- failOnError (applyDeposit refScripts scripts testOperator deposit pool)
-  redeemOut <- failOnError (makeRedemption scripts testOperator (poConfig newPool) 5)
+  redeemOut <- failOnError (localMakeRedemption scripts testOperator (poConfig newPool) 5)
   void $ failOnError $ applyRedemption refScripts scripts testOperator redeemOut newPool
 
 {-| Pay 100 Ada from one wallet to another

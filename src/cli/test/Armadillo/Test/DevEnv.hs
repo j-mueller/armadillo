@@ -13,16 +13,20 @@ module Armadillo.Test.DevEnv(
   createPool,
   makeDeposit,
   makeSwap,
+  makeRedemption,
   waitForKupoSync
 ) where
 
 import           Armadillo.Api                      (CreatePoolArgs (..),
                                                      MakeDepositArgs (..),
+                                                     RedeemArgs (..),
                                                      SwapArgs (..),
                                                      WrappedTx (..))
 import qualified Armadillo.Api                      as Api
-import           Armadillo.BuildTx                  (DepositOutput, PoolOutput,
-                                                     SwapOutput)
+import           Armadillo.BuildTx                  (DepositOutput,
+                                                     PoolOutput (..),
+                                                     RedeemOutput, SwapOutput,
+                                                     poolLiquidityAssetId)
 import           Armadillo.Cli                      (readJSONFile)
 import           Armadillo.Cli.Command              (Command (..),
                                                      DebugCommand (..),
@@ -117,15 +121,17 @@ createCurrency DevEnv{tempDir, wallet=RunningWalletServer{rwsOpConfigSigning}, n
   scriptHash <- readJSONFile outFile >>= either (error . (<>) ("Unable to read JSON file " <> outFile <> ": ")) pure
   pure $ C.AssetId (C.PolicyId scriptHash) (fromString name)
 
-createPool :: DevEnv -> Fee -> (AssetId, Quantity) -> (AssetId, Quantity) -> IO (PoolOutput TxIn)
+{-| Create a pool, returning the asset ID of the pool's liquidity token
+-}
+createPool :: DevEnv -> Fee -> (AssetId, Quantity) -> (AssetId, Quantity) -> IO (PoolOutput TxIn, C.AssetId)
 createPool devEnv@DevEnv{wallet=RunningWalletServer{rwsOperator}, node} (Fee fee) (assetX, Quantity cpoQuantityX) (assetY, Quantity cpoQuantityY) = do
   let (cpoPublicKeyHash, cpoStakingCredential) = operatorWalletID rwsOperator
       cpoAssetX = Api.fromCardanoAssetId assetX
       cpoAssetY = Api.fromCardanoAssetId assetY
       args = CreatePoolArgs{cpoAssetX, cpoAssetY, cpoQuantityX, cpoQuantityY, cpoFeeNumerator = fee, cpoPublicKeyHash, cpoStakingCredential}
-  (WrappedTx k, poolOut) <- runAPIRequest (Api.buildCreatePoolTx args) devEnv
+  (WrappedTx k, poolOut@PoolOutput{poConfig}) <- runAPIRequest (Api.buildCreatePoolTx args) devEnv
   _ <- signAndSubmitTx node rwsOperator k
-  pure poolOut
+  pure (poolOut, poolLiquidityAssetId poConfig)
 
 {-| Make a deposit to a pool
 -}
@@ -164,6 +170,21 @@ makeSwap devEnv@DevEnv{wallet=RunningWalletServer{rwsOperator}, node} assetX ass
   (WrappedTx k, swapOut) <- runAPIRequest (Api.buildSwapTx args) devEnv
   _ <- signAndSubmitTx node rwsOperator k
   pure swapOut
+
+makeRedemption :: DevEnv -> AssetId -> Quantity -> IO (RedeemOutput TxIn)
+makeRedemption devEnv@DevEnv{wallet=RunningWalletServer{rwsOperator}, node} lq (Quantity raAmount) = do
+  let (raPaymentPkh, raStakePkh) = operatorWalletID rwsOperator
+      args =
+        RedeemArgs
+          { raLiquidity = Api.fromCardanoAssetId lq
+          , raAmount
+          , raPaymentPkh
+          , raStakePkh
+          }
+  (WrappedTx k, redeemOut) <- runAPIRequest (Api.buildRedeemTx args) devEnv
+  _ <- signAndSubmitTx node rwsOperator k
+  pure redeemOut
+
 
 {-| Call the chain follower API, failing on errors
 -}

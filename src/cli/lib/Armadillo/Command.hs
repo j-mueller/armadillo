@@ -17,6 +17,7 @@ module Armadillo.Command(
   makeDeposit,
   localMakeDeposit,
   applyDeposit,
+  localMakeRedemption,
   makeRedemption,
   applyRedemption,
   makeSwap
@@ -92,6 +93,7 @@ data TxCommandError =
   | NoSuitableInputFound PaymentCredential
   | BuildTxError DEXBuildTxError
   | NoSuitablePoolFound C.AssetId C.AssetId
+  | NoPoolForLiquidityToken C.AssetId
   deriving (Show)
 
 deployRefScripts ::
@@ -182,8 +184,14 @@ applyDeposit refScripts scripts operator deposit pool = do
   tx <- mapError BalanceSubmitFailed (balanceAndSubmitOperator operator (Just rewardOut) (btx emptyTx))
   pure $ poolOut $> fst (head (txnUtxos tx))
 
-makeRedemption :: (MonadUtxoQuery m, MonadBlockchain m, MonadError TxCommandError m) => Scripts -> Operator Signing -> PoolConfig -> Quantity -> m (RedeemOutput TxIn)
-makeRedemption scripts operator poolCfg quantity = do
+makeRedemption :: (MonadUtxoQuery m, MonadBlockchain m, MonadError TxCommandError m) => Scripts -> C.Hash C.PaymentKey -> Maybe (C.Hash C.StakeKey) -> PoolConfig -> Quantity -> m (C.Tx C.BabbageEra, RedeemOutput TxIn)
+makeRedemption scripts paymentKey stakeKey poolCfg quantity = do
+  (out, btx) <- runBuildTxT $ mapError BuildTxError $ BuildTx.redeem scripts paymentKey stakeKey poolCfg quantity
+  tx <- mapError BalanceSubmitFailed (balanceOperator (C.PaymentCredentialByKey paymentKey) Nothing (btx emptyTx))
+  pure (tx, out $> fst (head (txnUtxos tx)))
+
+localMakeRedemption :: (MonadUtxoQuery m, MonadBlockchain m, MonadError TxCommandError m) => Scripts -> Operator Signing -> PoolConfig -> Quantity -> m (RedeemOutput TxIn)
+localMakeRedemption scripts operator poolCfg quantity = do
   let pkh = C.verificationKeyHash $ verificationKey $ oPaymentKey operator
   (out, btx) <- runBuildTxT $ mapError BuildTxError $ BuildTx.redeem scripts pkh Nothing poolCfg quantity
   tx <- mapError BalanceSubmitFailed (balanceAndSubmitOperator operator Nothing (btx emptyTx))

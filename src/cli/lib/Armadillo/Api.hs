@@ -59,6 +59,9 @@ module Armadillo.Api(
   SwapArgs(..),
   buildSwapTx,
 
+  RedeemArgs(..),
+  buildRedeemTx,
+
   -- ** Internal endpoints
   getPoolOutputs,
   getDepositOutputs,
@@ -66,7 +69,7 @@ module Armadillo.Api(
 ) where
 
 import           Armadillo.BuildTx               (DepositOutput, PoolOutput,
-                                                  SwapOutput)
+                                                  RedeemOutput, SwapOutput)
 import           Armadillo.Utils                 (readAssetId, unReadAssetId)
 import           Cardano.Api                     (TxIn)
 import qualified Cardano.Api                     as C
@@ -539,10 +542,22 @@ data SwapArgs =
     deriving stock (Eq, Show, Generic)
     deriving anyclass (ToJSON, FromJSON)
 
+
+data RedeemArgs =
+  RedeemArgs
+    { raLiquidity  :: AssetID
+    , raAmount     :: Integer
+    , raPaymentPkh :: PubKeyHash
+    , raStakePkh   :: Maybe PubKeyHash
+    }
+    deriving stock (Eq, Show, Generic)
+    deriving anyclass (ToJSON, FromJSON)
+
 type BuildTxAPI =
   "create-pool" :> Description "Create a new AMM pool" :> ReqBody '[JSON] CreatePoolArgs :> Post '[JSON] (WrappedTx, PoolOutput TxIn)
   :<|> "deposit" :> Description "Make a deposit to a pool" :> ReqBody '[JSON] MakeDepositArgs :> Post '[JSON] (WrappedTx, DepositOutput TxIn)
   :<|> "swap" :> Description "Swap some coins" :> ReqBody '[JSON] SwapArgs :> Post '[JSON] (WrappedTx, SwapOutput TxIn)
+  :<|> "redeem" :> Description "Redeem liquidity tokens" :> ReqBody '[JSON] RedeemArgs :> Post '[JSON] (WrappedTx, RedeemOutput TxIn)
 
 buildCreatePoolTx :: CreatePoolArgs -> ClientEnv -> IO (Either ClientError (WrappedTx, PoolOutput TxIn))
 buildCreatePoolTx args clientEnv =
@@ -556,5 +571,10 @@ buildMakeDepositTx args clientEnv =
 
 buildSwapTx :: SwapArgs -> ClientEnv -> IO (Either ClientError (WrappedTx, SwapOutput TxIn))
 buildSwapTx args clientEnv =
-  let _ :<|> _ :<|> swap = client (Proxy @("build-tx" :> BuildTxAPI))
+  let _ :<|> _ :<|> swap :<|> _ = client (Proxy @("build-tx" :> BuildTxAPI))
   in runClientM (swap args) clientEnv
+
+buildRedeemTx :: RedeemArgs -> ClientEnv -> IO (Either ClientError (WrappedTx, RedeemOutput TxIn))
+buildRedeemTx args clientEnv =
+  let _ :<|> _ :<|> _ :<|> redeem = client (Proxy @("build-tx" :> BuildTxAPI))
+  in runClientM (redeem args) clientEnv
